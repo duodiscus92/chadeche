@@ -1,0 +1,10 @@
+C	0	60	I	I	S	#Repos
+C	100	60	I	I	S	#Charge 100 mA
+C	200	60	I	I	S	#Charge 200 mA
+C	300	60	I	I	S	#Charge 300 mA
+C	400	60	I	I	S	#Charge 400 mA
+D	0	60	I	I	S	#Repos
+D	100	60	I	I	S	#Décharge 100 mA
+D	200	60	I	I	S	#Décharge 200 mA
+D	300	60	I	I	S	#Décharge 300 mA
+D	400	60	I	I	S	#Décharge 400 mA
