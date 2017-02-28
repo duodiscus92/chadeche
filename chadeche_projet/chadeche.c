@@ -26,12 +26,13 @@ typedef enum lang{FR, EN} LANGUAGE;
 LANGUAGE language = FR;
 
 typedef struct config {
+	int adr;
 	char cop;
 	int  milliamp;
 	int duration;
-	char toolow;
-	char toohigh;
-	char controlflag;
+	char toolow[5];
+	char toohigh[5];
+	char controlflag[5];
 	char comment[80];
 } CONFIG;
 
@@ -49,14 +50,16 @@ void readconf(char *filename)
 
 	while (!feof(fp)) {
 	    fgets(buffer, 80, fp);
-	    sscanf(buffer, "%c%d%d%*c%c%*c%c%*c%c\n",
+	    //sscanf(buffer, "%c%d%d%*c%c%*c%c%*c%c\n",
 	    //sscanf(buffer, "%c%d%d%c%c%c\n",
+	    sscanf(buffer, "%d;%c;%d;%d;%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-]\n",
+		&(tconfig[i].adr),
 		&(tconfig[i].cop),
 		&(tconfig[i].milliamp),
 		&(tconfig[i].duration),
-		&(tconfig[i].toolow),
-		&(tconfig[i].toohigh),
-		&(tconfig[i].controlflag));
+		tconfig[i].toolow,
+		tconfig[i].toohigh,
+		tconfig[i].controlflag);
 	    strcpy(tconfig[i].comment, strchr(buffer, '#')+1);
 	    i++;
 	}
@@ -263,9 +266,11 @@ int main (int argc, char **argv)
     int i, j, repeat, step, dt, peakdetected=0;
     unsigned int initialData, currentData, milliamp, milliampScaled, mAh;
     double voltage;
-    time_t t, totaltime, cycletime, elapsedtime;
+    time_t t, totaltime, cycletime, elapsedtime, steptime;
     FILE *fp;
     char cop, decision;
+    char *str, *endptr; // for call to function strtol
+    int adress; // for Jump
 
 
     /* initialisation par défaut et gestion des arguments */
@@ -289,15 +294,23 @@ int main (int argc, char **argv)
     /* presentation de l'essai */
     i = elapsedtime = mAh = 0;
     printf("Battery test sequence will be as follow ...\n");
-    printf("COP\tmA\ts\tL\tH\tC\tmAh\tE.T.\tComment\n");
+    printf("ADR\tCOP\tmA\tS\tL\tH\tC\tmAh\tE.T.\tComment\n");
     while(tconfig[i].cop != 0){
-	printf("%c\t%d\t%d\t%c\t%c\t%c\t%d\t%d\t%s",
+	printf("%d\t%c\t%d\t%d",
+	    tconfig[i].adr,					// numero ligne
 	    tconfig[i].cop, 					// code opération
 	    tconfig[i].milliamp,				//courant de charge ou décharge
-	    tconfig[i].duration,				// durée de l'étape
-	    tconfig[i].toolow,					// action si tension trop basse
-	    tconfig[i].toohigh,					// action si tension trop haute
-	    tconfig[i].controlflag,				// action si touches Contr-X pressées
+	    tconfig[i].duration);				// durée de l'étape
+	    //tconfig[i].toolow,					// action si tension trop basse
+	    //tconfig[i].toohigh,					// action si tension trop haute
+	    //tconfig[i].controlflag,				// action si touches Contr-X pressées
+	    adress = strtol(str = (tconfig[i].toolow),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
+	    adress = strtol(str = (tconfig[i].toohigh),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
+	    adress = strtol(str = (tconfig[i].controlflag),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
+	    printf("\t%d\t%d\t%s",
 	    mAh +=						// mAh cumulés
 		((tconfig[i].milliamp*tconfig[i].duration/3600)* (tconfig[i].cop == 'C' ? 1 : -1)),
 	    elapsedtime += tconfig[i].duration,			// temps total depuis le début de l'essai
@@ -351,6 +364,7 @@ int main (int argc, char **argv)
 	step = 0; elapsedtime = 0;
 	//time(&t);
 	while( (tconfig[step].cop !=0) ){
+	    time(&steptime);
 	    printf("Starting step %d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
 		step+1,
 		cop = tconfig[step].cop,
@@ -369,25 +383,38 @@ int main (int argc, char **argv)
 
 	    j=0;
 	    /* data acquisition and logging loop */
-	    while( (time(&t)-cycletime) <= elapsedtime ){
+	    //while( (time(&t)-cycletime) <= elapsedtime ){
+	    while( (time(&t)-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
                 voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
 		if(stopflag == 1 || peakdetected)
 		    goto abort;
-		else if(voltage <= VMIN)
-		    decision = tconfig[step].toolow;
-		else if(voltage >= VMAX)
-		    decision = tconfig[step].toohigh;
+		else if(voltage <= VMIN){
+	    	    adress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
+		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+	    //endptr == str ? decision = str[0]) : decision = 'J' /* jump */;
+		    //decision = tconfig[step].toolow;
+		}
+		else if(voltage >= VMAX){
+	     	    adress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
+		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
+		    //decision = tconfig[step].toohigh;
+		}
 		else if(controlflag == 1){
 		    controlflag = 0;
-		    decision = tconfig[step].controlflag;
+		    adress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
+		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
+		    //decision = tconfig[step].controlflag;
 		}
 		switch(decision){
 		case 'A' : goto abort;		// abort
 		case 'S' : goto nextstep;	// next step
 		case 'C' : goto nextcycle;	// next cycle
+		case 'J' : step = adress-1;	// Jump 
 		case 'I' : break;		// ignore (do nothin)
 		default :  break;
 		}
