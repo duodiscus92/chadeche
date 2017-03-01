@@ -50,8 +50,6 @@ void readconf(char *filename)
 
 	while (!feof(fp)) {
 	    fgets(buffer, 80, fp);
-	    //sscanf(buffer, "%c%d%d%*c%c%*c%c%*c%c\n",
-	    //sscanf(buffer, "%c%d%d%c%c%c\n",
 	    sscanf(buffer, "%d;%c;%d;%d;%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-]\n",
 		&(tconfig[i].adr),
 		&(tconfig[i].cop),
@@ -276,6 +274,7 @@ int main (int argc, char **argv)
     char *str, *endptr; // for call to function strtol
     int adress; // for Jump
     struct sigaction act;
+    enum cause {TOOLOW_DETECT, TOOHIGH_DETECT, CONTROLZ_DETECT} decisioncause;
 
 
     /* initialisation par défaut et gestion des arguments */
@@ -306,9 +305,6 @@ int main (int argc, char **argv)
 	    tconfig[i].cop, 					// code opération
 	    tconfig[i].milliamp,				//courant de charge ou décharge
 	    tconfig[i].duration);				// durée de l'étape
-	    //tconfig[i].toolow,					// action si tension trop basse
-	    //tconfig[i].toohigh,					// action si tension trop haute
-	    //tconfig[i].controlflag,				// action si touches Contr-X pressées
 	    adress = strtol(str = (tconfig[i].toolow),  &endptr, 10);
 	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
 	    adress = strtol(str = (tconfig[i].toohigh),  &endptr, 10);
@@ -351,7 +347,7 @@ int main (int argc, char **argv)
     printf("Setting current to zero and waiting 5 seconds ...\n");
     mcp4921write(0);
     delay(5000);
-    /* wait for battery presence before starting test 
+    /* wait for battery presence before starting test */
     if((currentData=mcp3201read()) == 0 ){
 	printf("Waiting for battery presence\n");
 	do {
@@ -361,9 +357,10 @@ int main (int argc, char **argv)
 	printf("\nBattery presence detected. Test will start in 5 seconds ...\n");
 	delay(5000);
     }
-    */
+
     /* verify that Vcell don't exceed Vmax_open */
-    if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
+    //if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
+    if((voltage = (double)currentData*0.9758*5.1/4096 + offset) >= VMAX_OPEN)
 	goto abort;
 
     /* main measurement loop */
@@ -398,30 +395,29 @@ int main (int argc, char **argv)
 	    while( (time(&t)-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
-                voltage = (double)currentData*5.1/4096 + offset;
+	        voltage = (double)currentData*0.9758*5.1/4096 + offset;
+                //voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
 		if(stopflag == 1 || peakdetected)
 		    goto abort;
-		else if(voltage <= VMIN){
+		if(voltage <= VMIN){
 	    	    adress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-	    //endptr == str ? decision = str[0]) : decision = 'J' /* jump */;
-		    //decision = tconfig[step].toolow;
+		    if(decision != 'I') goto mngdec;
 		}
-		else if(voltage >= VMAX){
+		/*else*/ if(voltage >= VMAX){
 	     	    adress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
-		    //decision = tconfig[step].toohigh;
+	  	    if(decision != 'I') goto mngdec;
 		}
-		else if(controlflag == 1){
+		/*else*/ if(controlflag == 1){
 		    controlflag = 0;
 		    adress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
-		    //decision = tconfig[step].controlflag;
+		    decisioncause = CONTROLZ_DETECT;
+	  	    /*if(decision != 'I') goto mngdec;*/
 		}
-		switch(decision){
+mngdec:		switch(decision){
 		case 'A' : goto abort;		// abort
 		case 'S' : goto nextstep;	// next step
 		case 'C' : goto nextcycle;	// next cycle
@@ -464,6 +460,8 @@ abort:
     	printf ("\nBattery test ends because battery peak detected with voltage = %5.3f\n", voltage);
     else if (stopflag==1)
     	printf ("\nBattery test ends due to Ctrl-C occurence. Battery voltage is = %5.3f\n", voltage);
+    else if (decisioncause == CONTROLZ_DETECT)
+    	printf ("\nBattery test ends due to Ctrl-Z occurence. Battery voltage is = %5.3f\n", voltage);
     else
 	printf ("\nBattery test because test is complete (normal condition)\n");
 
