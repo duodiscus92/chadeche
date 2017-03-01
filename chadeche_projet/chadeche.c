@@ -80,7 +80,11 @@ void CtrlCHandler(int sig)
 
 volatile int controlflag=0;
 /* Ctrl-Z interrupt handler */
-void CtrlZHandler(int sig)
+//void CtrlZHandler(int sig)
+//{
+//    controlflag=1;
+//}
+void CtrlZHandler(int sig, siginfo_t *siginfo, void * context)
 {
     controlflag=1;
 }
@@ -271,6 +275,7 @@ int main (int argc, char **argv)
     char cop, decision;
     char *str, *endptr; // for call to function strtol
     int adress; // for Jump
+    struct sigaction act;
 
 
     /* initialisation par défaut et gestion des arguments */
@@ -333,15 +338,20 @@ int main (int argc, char **argv)
     /* installing the Ctrl-C handler */
     signal(SIGINT, CtrlCHandler);
     /* installing the Ctrl-Z handler */
-    signal(SIGTSTP, CtrlZHandler);
-
+    act.sa_sigaction = &CtrlZHandler;
+    act.sa_flags = SA_SIGINFO;
+    //signal(SIGTSTP, CtrlZHandler);
+    if(sigaction(SIGTSTP, &act, NULL) <0){
+	perror("sigaction");
+	return 1;
+    }
     /* settintgs and pre-tests */
     fprintf(fp, "COP;Cycle;Step;mA;ET;TT;Brut;Volts;Date\n");
     fflush(fp);
     printf("Setting current to zero and waiting 5 seconds ...\n");
     mcp4921write(0);
     delay(5000);
-    /* wait for battery presence before starting test */
+    /* wait for battery presence before starting test 
     if((currentData=mcp3201read()) == 0 ){
 	printf("Waiting for battery presence\n");
 	do {
@@ -351,6 +361,7 @@ int main (int argc, char **argv)
 	printf("\nBattery presence detected. Test will start in 5 seconds ...\n");
 	delay(5000);
     }
+    */
     /* verify that Vcell don't exceed Vmax_open */
     if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
 	goto abort;
@@ -393,20 +404,20 @@ int main (int argc, char **argv)
 		    goto abort;
 		else if(voltage <= VMIN){
 	    	    adress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
-		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
 	    //endptr == str ? decision = str[0]) : decision = 'J' /* jump */;
 		    //decision = tconfig[step].toolow;
 		}
 		else if(voltage >= VMAX){
 	     	    adress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
-		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
 	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
 		    //decision = tconfig[step].toohigh;
 		}
 		else if(controlflag == 1){
 		    controlflag = 0;
 		    adress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
-		    decision =  endptr == str ? str[0] : 'J'; /* J = Jump */
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
 	    //endptr == str ? printf("\t%c", str[0]) : printf(\t%d", val);
 		    //decision = tconfig[step].controlflag;
 		}

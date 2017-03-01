@@ -1,10 +1,10 @@
-1;C;0;40;I;I;S;#Repos
-2;C;100;40;I;I;I;#Charge 100 mA
-3;C;200;40;I;I;S;#Charge 100 mA
-4;C;300;40;I;I;S;#Charge 100 mA
-5;C;400;40;I;I;S;#Charge 100 mA
-6;D;0;40;I;I;S;#Repos
-7;D;100;40;I;I;2;#Decharge 100 mA
-8;D;200;40;I;I;S;#Decharge 200 mA
-9;D;300;40;I;I;S;#Decharge 300 mA
-10;D;400;40;I;I;S;#Decharge 400 mA
+1;C;0;180;I;I;S;#Repos
+2;C;100;180;I;I;S;#Charge 100 mA
+3;C;200;180;I;I;S;#Charge 100 mA
+4;C;300;180;I;I;S;#Charge 100 mA
+5;C;400;180;I;I;S;#Charge 100 mA
+6;D;0;180;I;I;S;#Repos
+7;D;100;180;I;I;S;#Décharge 100 mA
+8;D;200;180;I;I;S;#Décharge 100 mA
+9;D;300;180;I;I;S;#Décharge 100 mA
+10;D;400;180;I;I;S;#Décharge 100 mA
