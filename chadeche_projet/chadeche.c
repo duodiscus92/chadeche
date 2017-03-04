@@ -360,7 +360,7 @@ int main (int argc, char **argv)
 
     /* verify that Vcell don't exceed Vmax_open */
     //if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
-    if((voltage = (double)currentData*0.9758*5.1/4096 + offset) >= VMAX_OPEN)
+    if((voltage = (double)currentData/1000 + offset) >= VMAX_OPEN)
 	goto abort;
 
     /* main measurement loop */
@@ -386,7 +386,8 @@ int main (int argc, char **argv)
 	    /* set the current to the desired value */
 	    //milliampScaled = tconfig[step].milliamp*8.0194+2.4817;
 	    //milliampScaled = tconfig[step].milliamp*8.113+1.3484;
-	    milliampScaled = tconfig[step].milliamp*8.0327+1.3484;
+	    //milliampScaled = tconfig[step].milliamp*8.0327+1.3484;
+	    milliampScaled = tconfig[step].milliamp*10;
 	    mcp4921write(milliampScaled);
 
 	    j=0;
@@ -395,7 +396,8 @@ int main (int argc, char **argv)
 	    while( (time(&t)-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
-	        voltage = (double)currentData*0.9758*5.1/4096 + offset;
+	        voltage = (double)currentData/1000 + offset;
+	        //voltage = (double)currentData*0.9758*5.1/4096 + offset;
                 //voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
 		if(stopflag == 1 || peakdetected)

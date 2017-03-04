@@ -71,13 +71,13 @@ int main (void)
 	pinMode (A1, OUTPUT) ;
 	pinMode (CS0, OUTPUT) ;
 	pinMode (CS1, OUTPUT) ;
-	pinMode (REL, OUTPUT) ;
+	//pinMode (REL, OUTPUT) ;
 
 	digitalWrite (A0, LOW) ;	
 	digitalWrite (A1, LOW) ;	
 	digitalWrite (CS0, HIGH) ;
 	digitalWrite (CS1, HIGH) ;
-	digitalWrite (REL, LOW) ;
+	//digitalWrite (REL, LOW) ;
 
 
 	wiringPiSPISetup(0, 100000);
@@ -96,7 +96,7 @@ int main (void)
 			digitalWrite (CS0, LOW) ;
 			wiringPiSPIDataRW(0, val.buf, 2);
 			digitalWrite (CS0, HIGH) ;
-			//for(;;){
+			for(;;){
 			   for(i=0, filtered=0 ;i<8; i++){
 				digitalWrite (CS1, LOW) ;
 				wiringPiSPIDataRW(0, val.buf, 2);
@@ -113,7 +113,7 @@ int main (void)
 			   printf("Lecture : %d\n", filtered>>3);
 			   //printf("Lecture : %d\n", val.i);
 			   //delay (100);
-			//}
+			}
 		}
 	}
 	return 0;
