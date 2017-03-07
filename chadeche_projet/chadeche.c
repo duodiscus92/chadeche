@@ -13,7 +13,7 @@
 
 
 #define A0	0	//GPIO 17
-#define A1	2	//GPIO 2 
+#define A1	2	//GPIO 27
 #define	CS0	4	//GPIO 23 CS0
 #define	CS1	5	//GPIO 24 CS1
 #define	REL	7	//GPIO 4 commande relais
@@ -173,11 +173,11 @@ int deltapeak(int rawdata)
 }
 
 /* default values */
-#define CAPACITY 1700 /* mAh */
+#define CAPACITY 1300 /* mAh */
 #define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
 #define VMAX 1.75 /* Vcell max during charge */
 #define VMIN 1.0 /* Vcell min */
-#define OFFSET 0.006
+#define OFFSET 0
 #define RESULTS_FILENAME "chadeche.csv"
 #define CONFIG_FILENAME "chadeche.txt"
 //#define RECORDTHRESHOLD 1	/* used only when record mode is RECORD_BY_VOLTAGE */
@@ -186,10 +186,11 @@ int deltapeak(int rawdata)
 #define RECORDPERIOD 120 	/* used only when record mode is RECORD_BY_TIME */
 #define NCYCLE 1
 
-/* parameters */
-int verbose_concise = CONCISE, recordPeriod = RECORDPERIOD,  capacity = CAPACITY, ncycle = NCYCLE, langage = FR;
+/* parameters et valeurs part défaut */
+int verbose_concise = CONCISE, recordPeriod = RECORDPERIOD, 
+	capacity = CAPACITY, ncycle = NCYCLE, langage = FR; 
 /* other global */
-double offset = OFFSET; /* to offset CAN measurement errors */
+double offset = OFFSET,	vmax = VMAX, vmin = VMIN;
 char results_filename[80], config_filename[80];
 char **msg; /* multilingual message */
 /* param manager */
@@ -242,6 +243,16 @@ void argManager(int argc, char **argv)
 	    verbose_concise = VERBOSE;
 	    continue;
 	} else
+	/* is it offset vmin */
+	if(!strncmp("-m", argv[i], 2)){
+	    vmin = atof(argv[i]+2);
+	    continue;
+	} else
+	/* is it offset vmaw */
+	if(!strncmp("-M", argv[i], 2)){
+	    vmax= atof(argv[i]+2);
+	    continue;
+	} else
 	/* is it help */
 	if(!strncmp("-h", argv[i], 2)){
 	    printf("Syntax: chadeche <option>\n");
@@ -252,6 +263,8 @@ void argManager(int argc, char **argv)
 	    printf("\t-p record period (seconds)\n");
 	    printf("\t-v activate VERBOSE mode\n");
 	    printf("\t-o offset (volts)\n");
+	    printf("\t-m vmin (default is %5.4f\n", VMIN);
+	    printf("\t-M vmin (default is %5.4f\n", VMAX);
 	    printf("\t-h this help\n");
 	    printf("Warning : no space between option flag and value (e.g. m0 is good but m 0 is bad)\n\n");
 	    exit(1);
@@ -288,6 +301,8 @@ int main (int argc, char **argv)
     printf("\tConfig filename : %s\n", config_filename);
     printf("\tRepeat factor: %d\n", ncycle); 
     printf("\tOffset : %5.4f\n", offset);
+    printf("\tVmin threshold : %5.4f\n", vmin);
+    printf("\tVmax threshold : %5.4f\n", vmax);
     printf("\tRecord period in seconds: %4d\n", recordPeriod);
     printf("\tMode :  ");
 	 verbose_concise == CONCISE ? printf("CONCISE\n") : printf("VERBOSE\n");
@@ -298,7 +313,7 @@ int main (int argc, char **argv)
     /* presentation de l'essai */
     i = elapsedtime = mAh = 0;
     printf("Battery test sequence will be as follow ...\n");
-    printf("ADR\tCOP\tmA\tS\tL\tH\tC\tmAh\tE.T.\tComment\n");
+    printf("ADR\tCOP\tmA\tS\tL\tH\tC\tmAh\tSTD\tComment\n");
     while(tconfig[i].cop != 0){
 	printf("%d\t%c\t%d\t%d",
 	    tconfig[i].adr,					// numero ligne
@@ -319,12 +334,6 @@ int main (int argc, char **argv)
 	i++;
     }
 
-   /* creating  the file to record results */
-    if((fp = fopen(results_filename,  "w+x"))==NULL){
-	printf("Can't open file : %s\n",results_filename);
-	exit(1);
-    }
-
     /* Rpi initialization */
     initchadeche();
 
@@ -342,8 +351,8 @@ int main (int argc, char **argv)
 	return 1;
     }
     /* settintgs and pre-tests */
-    fprintf(fp, "COP;Cycle;Step;mA;ET;TT;Brut;Volts;Date\n");
-    fflush(fp);
+    //fprintf(fp, "COP;Cycle;Step;mA;ET;TT;Brut;Volts;Date\n");
+    //fflush(fp);
     printf("Setting current to zero and waiting 5 seconds ...\n");
     mcp4921write(0);
     delay(5000);
@@ -363,6 +372,12 @@ int main (int argc, char **argv)
     if((voltage = (double)currentData/1000 + offset) >= VMAX_OPEN)
 	goto abort;
 
+   /* creating  the file to record results */
+    if((fp = fopen(results_filename,  "w+x"))==NULL){
+	printf("Can't open file : %s\n",results_filename);
+	exit(1);
+    }
+
     /* main measurement loop */
     time(&totaltime);
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
@@ -373,14 +388,16 @@ int main (int argc, char **argv)
 	//time(&t);
 	while( (tconfig[step].cop !=0) ){
 	    time(&steptime);
-	    printf("Starting step %d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
-		step+1,
-		cop = tconfig[step].cop,
-	    	tconfig[step].milliamp,
-	    	tconfig[step].duration,
-	    	tconfig[step].milliamp*tconfig[step].duration/3600,
-	    	elapsedtime += tconfig[step].duration,
-	    	tconfig[step].comment);
+	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
+	    printf("Starting step nr.: %2d\n",
+		step+1
+		//cop = tconfig[step].cop,
+	    	//tconfig[step].milliamp,
+	    	//tconfig[step].duration,
+	    	//tconfig[step].milliamp*tconfig[step].duration/3600,
+	    	//elapsedtime += tconfig[step].duration,
+	    	//tconfig[step].comment
+		);
 	    /* set the relay for the current mode */
 	    digitalWrite (REL, tconfig[step].cop == 'D' ? DISCHARGE : CHARGE) ;
 	    /* set the current to the desired value */
@@ -402,17 +419,20 @@ int main (int argc, char **argv)
 		decision = 'I'; // Ignore
 		if(stopflag == 1 || peakdetected)
 		    goto abort;
-		if(voltage <= VMIN){
+		if(voltage <= vmin){
+		    printf("Evenement : V < Vmin\n");
 	    	    adress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
 		    if(decision != 'I') goto mngdec;
 		}
-		/*else*/ if(voltage >= VMAX){
+		/*else*/ if(voltage >= vmax){
+		    printf("Evenement : V > Vmax\n");
 	     	    adress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
 	  	    if(decision != 'I') goto mngdec;
 		}
 		/*else*/ if(controlflag == 1){
+		    printf("Evenement : Ctrl-Z\n");
 		    controlflag = 0;
 		    adress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
@@ -431,8 +451,17 @@ mngdec:		switch(decision){
 		//if((verbose_concise == VERBOSE) && !((t-cycletime) % 10) ){
 		dt = verbose_concise == VERBOSE ? 10 : recordPeriod; 
 		if(!((t-cycletime) % dt) ){
-            	    printf("%c/%02d/%02d mA=%4d E.T.=%6d T.T.=%6d Raw=%3d V=%5.3f %s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
-            	    fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
+            	    //printf("%c/%02d/%02d mA=%4d E.T.=%6d T.T.=%6d Raw=%3d V=%5.3f %s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
+            	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
+            	    printf("%c/%02d/%02d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f %s", 
+			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /* consigne courant */tconfig[step].milliamp,
+			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
+			voltage, ctime(&t));
+            	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
+            	    fprintf(fp, "%c;%02d;%02d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
+			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /* consigne courant */tconfig[step].milliamp,
+			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
+			voltage, ctime(&t));
 	    	    fflush(fp);
         	}
 	    	else if(verbose_concise == CONCISE){
@@ -452,12 +481,12 @@ abort:
     fclose(fp);
 
     /* testing why the test ends */
-    if (voltage >= VMAX)
-    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, VMAX);
+    if (voltage >= vmax)
+    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, vmax);
     else if (voltage >= VMAX_OPEN)
     	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, VMAX_OPEN);
-    else if (voltage <= VMIN)
-    	printf ("\nBattery test ends because battery voltage = %5.3f is <= %4.2f Volts\n", voltage, VMIN);
+    else if (voltage <= vmin)
+    	printf ("\nBattery test ends because battery voltage = %5.3f is <= %4.2f Volts\n", voltage, vmin);
     else if (peakdetected)
     	printf ("\nBattery test ends because battery peak detected with voltage = %5.3f\n", voltage);
     else if (stopflag==1)
