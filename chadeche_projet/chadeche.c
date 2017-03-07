@@ -23,7 +23,35 @@
 #define DISCHARGE LOW
 
 typedef enum lang{FR, EN} LANGUAGE;
-LANGUAGE language = FR;
+
+/* default values */
+#define CAPACITY 1300 /* mAh */
+#define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
+#define VMAX 1.75 /* Vcell max during charge */
+#define VMIN 1.0 /* Vcell min */
+#define OFFSET 0
+#define RESULTS_FILENAME "chadeche-results.csv"
+#define CONFIG_FILENAME "chadeche-config.csv"
+//#define RECORDTHRESHOLD 1	/* used only when record mode is RECORD_BY_VOLTAGE */
+#define CONCISE 0
+#define VERBOSE 1
+#define RECORDPERIOD 120 	/* used only when record mode is RECORD_BY_TIME */
+#define NCYCLE 1
+#define DAUGHTER_BOARD_ADRESS 0
+/* parameters et valeurs part défaut */
+LANGUAGE language = EN;
+int	verbose_concise = CONCISE,
+	recordPeriod = RECORDPERIOD,
+	capacity = CAPACITY,
+	ncycle = NCYCLE,
+	dba = DAUGHTER_BOARD_ADRESS,
+	langage = FR;
+double 	offset = OFFSET,
+	vmax = VMAX,
+	vmin = VMIN;
+char 	results_filename[80]=RESULTS_FILENAME,
+	config_filename[80]=CONFIG_FILENAME;
+
 
 typedef struct config {
 	int adr;
@@ -37,6 +65,7 @@ typedef struct config {
 } CONFIG;
 
 CONFIG tconfig[50];
+/* read the config file and store values into tconfig */
 void readconf(char *filename)
 {
 	FILE *fp;
@@ -88,7 +117,7 @@ void CtrlZHandler(int sig, siginfo_t *siginfo, void * context)
 }
 
 
-/* chadeche initialisation */
+/* chadeche harware initialisation */
 void initchadeche(void)
 {
     wiringPiSetup () ;
@@ -99,8 +128,8 @@ void initchadeche(void)
     pinMode (REL, OUTPUT) ;
     pinMode (ENDLED, OUTPUT) ;
 
-    digitalWrite (A0, LOW) ;   // adresse A0=0
-    digitalWrite (A1, LOW) ;   // adresse A1=0
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     digitalWrite (CS0, HIGH) ; // deselect DAC
     digitalWrite (CS1, HIGH) ; // deselect CAN
     digitalWrite (REL, DISCHARGE) ;  // discharge mode
@@ -172,33 +201,13 @@ int deltapeak(int rawdata)
     return 0;
 }
 
-/* default values */
-#define CAPACITY 1300 /* mAh */
-#define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
-#define VMAX 1.75 /* Vcell max during charge */
-#define VMIN 1.0 /* Vcell min */
-#define OFFSET 0
-#define RESULTS_FILENAME "chadeche.csv"
-#define CONFIG_FILENAME "chadeche.txt"
-//#define RECORDTHRESHOLD 1	/* used only when record mode is RECORD_BY_VOLTAGE */
-#define CONCISE 0
-#define VERBOSE 1
-#define RECORDPERIOD 120 	/* used only when record mode is RECORD_BY_TIME */
-#define NCYCLE 1
-
-/* parameters et valeurs part défaut */
-int verbose_concise = CONCISE, recordPeriod = RECORDPERIOD, 
-	capacity = CAPACITY, ncycle = NCYCLE, langage = FR; 
-/* other global */
-double offset = OFFSET,	vmax = VMAX, vmin = VMIN;
-char results_filename[80], config_filename[80];
-char **msg; /* multilingual message */
 /* param manager */
 void argManager(int argc, char **argv)
 {
     int i;
     /* Testing and getting parameters */
     /* Paramters are
+    -a : daughter board adresse 
     -c : battery capacity (mAh)
     -f : filename to record results
     -n : # cycles
@@ -208,6 +217,11 @@ void argManager(int argc, char **argv)
     -h : help */
     //while(i>=1){
     for(i=argc-1; i>=1; i--){
+	/* is it daughter board adress ?*/
+	if(!strncmp("-a", argv[i], 2)){
+	    dba = atoi(argv[i]+2);
+	    continue;
+	} else
 	/* is it battery capacity ?*/
 	if(!strncmp("-c", argv[i], 2)){
 	    capacity = atoi(argv[i]+2);
@@ -256,13 +270,14 @@ void argManager(int argc, char **argv)
 	/* is it help */
 	if(!strncmp("-h", argv[i], 2)){
 	    printf("Syntax: chadeche <option>\n");
-	    printf("\t-c battery capacity (mAh)\n");
-	    printf("\t-n Repeat factor\n");
-	    printf("\t-f results filename\n");
-	    printf("\t-g config filename\n");
+	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
+	    printf("\t-c battery capacity (mAh, def = %d)\n", CAPACITY);
+	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
+	    printf("\t-f results filename (def = %s)\n",RESULTS_FILENAME);
+	    printf("\t-g config filename (def = %s)\n", CONFIG_FILENAME);
 	    printf("\t-p record period (seconds)\n");
 	    printf("\t-v activate VERBOSE mode\n");
-	    printf("\t-o offset (volts)\n");
+	    printf("\t-o offset (volts, def = 0)\n");
 	    printf("\t-m vmin (default is %5.4f\n", VMIN);
 	    printf("\t-M vmin (default is %5.4f\n", VMAX);
 	    printf("\t-h this help\n");
@@ -291,11 +306,12 @@ int main (int argc, char **argv)
 
 
     /* initialisation par défaut et gestion des arguments */
-    strcpy(results_filename, RESULTS_FILENAME);
-    strcpy(config_filename, CONFIG_FILENAME);
+    //strcpy(results_filename, RESULTS_FILENAME);
+    //strcpy(config_filename, CONFIG_FILENAME);
     argManager(argc, argv);
 
     printf("Chadeche test parameters:\n");
+    printf("\tDaugther board adress : %d\n", dba);
     printf("\tBattery capacity : %d\n", capacity); 
     printf("\tResults filename : %s\n", results_filename);
     printf("\tConfig filename : %s\n", config_filename);
@@ -380,12 +396,13 @@ int main (int argc, char **argv)
 
     /* main measurement loop */
     time(&totaltime);
+    /* cycle loop */
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
 	printf("Starting cycle nr.:%2d\n", repeat+1);
     	/* initializing time in second */
     	time(&cycletime);
 	step = 0; elapsedtime = 0;
-	//time(&t);
+	/* step loop */
 	while( (tconfig[step].cop !=0) ){
 	    time(&steptime);
 	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
@@ -399,17 +416,13 @@ int main (int argc, char **argv)
 	    	//tconfig[step].comment
 		);
 	    /* set the relay for the current mode */
-	    digitalWrite (REL, tconfig[step].cop == 'D' ? DISCHARGE : CHARGE) ;
+	    digitalWrite (REL, (cop=tconfig[step].cop) == 'D' ? DISCHARGE : CHARGE) ;
 	    /* set the current to the desired value */
-	    //milliampScaled = tconfig[step].milliamp*8.0194+2.4817;
-	    //milliampScaled = tconfig[step].milliamp*8.113+1.3484;
-	    //milliampScaled = tconfig[step].milliamp*8.0327+1.3484;
 	    milliampScaled = tconfig[step].milliamp*10;
 	    mcp4921write(milliampScaled);
 
 	    j=0;
 	    /* data acquisition and logging loop */
-	    //while( (time(&t)-cycletime) <= elapsedtime ){
 	    while( (time(&t)-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
@@ -509,9 +522,6 @@ abort:
     }
     digitalWrite (ENDLED, LOW) ;
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
-    //msg[FR] = "\nAu revoir !!!\n";
-    //msg[EN] = "\nBye !!!\n";
-    //printf(msg[FR]);
 
     return 0;
 }
