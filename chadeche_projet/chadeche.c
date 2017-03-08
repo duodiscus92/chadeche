@@ -9,7 +9,11 @@
 #include <time.h>
 #include <string.h>
 #include <signal.h>
-//#include <setjmp.h>
+#include <semaphore.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 
 
 #define A0	0	//GPIO 17
@@ -38,6 +42,7 @@ typedef enum lang{FR, EN} LANGUAGE;
 #define RECORDPERIOD 120 	/* used only when record mode is RECORD_BY_TIME */
 #define NCYCLE 1
 #define DAUGHTER_BOARD_ADRESS 0
+
 /* parameters et valeurs part défaut */
 LANGUAGE language = EN;
 int	verbose_concise = CONCISE,
@@ -51,6 +56,9 @@ double 	offset = OFFSET,
 	vmin = VMIN;
 char 	results_filename[80]=RESULTS_FILENAME,
 	config_filename[80]=CONFIG_FILENAME;
+
+/* semaphore for exclusive access to Rpi */
+static sem_t *semaphore = NULL;
 
 
 typedef struct config {
@@ -73,7 +81,7 @@ void readconf(char *filename)
 	char buffer[80];
 
 	if ((fp = fopen(filename, "r")) == NULL){
-	    printf("Impossible ouvrir fichier config %s\n", filename);
+	    printf("Program aborted : can't open config file %s\n", filename);
 	    exit(1);
 	}
 
@@ -117,24 +125,72 @@ void CtrlZHandler(int sig, siginfo_t *siginfo, void * context)
 }
 
 
-/* chadeche harware initialisation */
+/* chadeche hardware initialisation */
+/* this function may be called only by the first process launched */
+/* therefore, msemaphore are not mandattory here */
+int firstcall = 1;
 void initchadeche(void)
 {
+    sem_wait(semaphore);
     wiringPiSetup () ;
-    pinMode (A0, OUTPUT) ;
-    pinMode (A1, OUTPUT) ;
-    pinMode (CS0, OUTPUT) ;
-    pinMode (CS1, OUTPUT) ;
-    pinMode (REL, OUTPUT) ;
-    pinMode (ENDLED, OUTPUT) ;
+    if(firstcall == 1){
+    	pinMode (A0, OUTPUT) ;
+    	pinMode (A1, OUTPUT) ;
+    	pinMode (CS0, OUTPUT) ;
+    	pinMode (CS1, OUTPUT) ;
+    	pinMode (REL, OUTPUT) ;
+    	pinMode (ENDLED, OUTPUT) ;
 
+    	//digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    	//digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    	digitalWrite (CS0, HIGH) ; // deselect DAC
+    	digitalWrite (CS1, HIGH) ; // deselect CAN
+    	digitalWrite (REL, DISCHARGE) ;  // discharge mode
+    }
+    wiringPiSPISetup(0, 100000); // init SPI interface
+    sem_post(semaphore);
+}
+
+/* endled off */
+void endledoff(void)
+{
+    sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    digitalWrite (CS0, HIGH) ; // deselect DAC
-    digitalWrite (CS1, HIGH) ; // deselect CAN
-    digitalWrite (REL, DISCHARGE) ;  // discharge mode
+    digitalWrite (ENDLED, HIGH) ;
+    sem_post(semaphore);
+}
 
-    wiringPiSPISetup(0, 100000); // init SPI interface
+/* endled on */
+void endledon(void)
+{
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    digitalWrite (ENDLED, LOW) ;
+    sem_post(semaphore);
+}
+
+/* relay on charge position */
+int charge(void)
+{
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    digitalWrite (REL, CHARGE) ;  // discharge mode
+    sem_post(semaphore);
+    return 1;
+}
+
+/* relay on discharge position */
+int discharge(void)
+{
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    digitalWrite (REL, DISCHARGE) ;  // discharge mode
+    sem_post(semaphore);
+    return 0;
 }
 
 /* write avalue into the dac */
@@ -146,6 +202,9 @@ void mcp4921write(unsigned int value)
 	unsigned char buf[2];
     }val;
 
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     val.i = value+4096+8192+16384;
     tmp= val.buf[0];
     val.buf[0] = val.buf[1];
@@ -153,6 +212,7 @@ void mcp4921write(unsigned int value)
     digitalWrite (CS0, LOW) ;
     wiringPiSPIDataRW(0, val.buf, 2);
     digitalWrite (CS0, HIGH) ;
+    sem_post(semaphore);
 }
 
 
@@ -167,6 +227,10 @@ unsigned int mcp3201read()
 
     unsigned int filtered;
     int i;
+
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     for(i=0, filtered=0 ;i<8; i++){
         digitalWrite (CS1, LOW) ;
 	wiringPiSPIDataRW(0, val.buf, 2);
@@ -179,6 +243,7 @@ unsigned int mcp3201read()
 	filtered += val.i;
 	delay(5);
    }
+   sem_post(semaphore);
    return filtered>>3;
 }
 
@@ -290,7 +355,6 @@ void argManager(int argc, char **argv)
     }
 }
 
-/* pour point de reprise en cas d'abandon acquisition */
 int main (int argc, char **argv)
 {
     int i, j, repeat, step, dt, peakdetected=0;
@@ -306,8 +370,6 @@ int main (int argc, char **argv)
 
 
     /* initialisation par défaut et gestion des arguments */
-    //strcpy(results_filename, RESULTS_FILENAME);
-    //strcpy(config_filename, CONFIG_FILENAME);
     argManager(argc, argv);
 
     printf("Chadeche test parameters:\n");
@@ -350,12 +412,6 @@ int main (int argc, char **argv)
 	i++;
     }
 
-    /* Rpi initialization */
-    initchadeche();
-
-    /* end led (red) off */
-    digitalWrite (ENDLED, HIGH) ;
-
     /* installing the Ctrl-C handler */
     signal(SIGINT, CtrlCHandler);
     /* installing the Ctrl-Z handler */
@@ -364,14 +420,31 @@ int main (int argc, char **argv)
     //signal(SIGTSTP, CtrlZHandler);
     if(sigaction(SIGTSTP, &act, NULL) <0){
 	perror("sigaction");
-	return 1;
+	exit(1);
     }
+
+    /* semaphore creation ans initialization */
+    semaphore = sem_open("/semaphore", O_CREAT | O_RDWR | O_EXCL, 0600, 1);
+    if (semaphore == SEM_FAILED) {
+	perror("/semaphore");
+	semaphore = sem_open("/semaphore", O_RDWR);
+	if (semaphore == SEM_FAILED) {
+	    perror("/semaphore");
+	    exit(EXIT_FAILURE);
+	 }
+	firstcall = 0;
+     }
+     /* Rpi initialization */
+    initchadeche();
+
+    /* end led (red) off */
+    endledoff();
+
     /* settintgs and pre-tests */
-    //fprintf(fp, "COP;Cycle;Step;mA;ET;TT;Brut;Volts;Date\n");
-    //fflush(fp);
     printf("Setting current to zero and waiting 5 seconds ...\n");
     mcp4921write(0);
     delay(5000);
+
     /* wait for battery presence before starting test */
     if((currentData=mcp3201read()) == 0 ){
 	printf("Waiting for battery presence\n");
@@ -390,7 +463,8 @@ int main (int argc, char **argv)
 
    /* creating  the file to record results */
     if((fp = fopen(results_filename,  "w+x"))==NULL){
-	printf("Can't open file : %s\n",results_filename);
+	printf("Program aborted : can't open results file : %s\n",results_filename);
+	sem_unlink("/semaphore");
 	exit(1);
     }
 
@@ -416,7 +490,8 @@ int main (int argc, char **argv)
 	    	//tconfig[step].comment
 		);
 	    /* set the relay for the current mode */
-	    digitalWrite (REL, (cop=tconfig[step].cop) == 'D' ? DISCHARGE : CHARGE) ;
+	    //digitalWrite (REL, (cop=tconfig[step].cop) == 'D' ? DISCHARGE : CHARGE) ;
+	    (cop=tconfig[step].cop) == 'D' ? discharge() : charge() ;
 	    /* set the current to the desired value */
 	    milliampScaled = tconfig[step].milliamp*10;
 	    mcp4921write(milliampScaled);
@@ -466,13 +541,15 @@ mngdec:		switch(decision){
 		if(!((t-cycletime) % dt) ){
             	    //printf("%c/%02d/%02d mA=%4d E.T.=%6d T.T.=%6d Raw=%3d V=%5.3f %s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
-            	    printf("%c/%02d/%02d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f %s", 
-			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /* consigne courant */tconfig[step].milliamp,
+            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f %s", 
+			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
+			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
 			voltage, ctime(&t));
             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
-            	    fprintf(fp, "%c;%02d;%02d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
-			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /* consigne courant */tconfig[step].milliamp,
+            	    fprintf(fp, "%c;%02d;%02d;%1d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
+			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
+			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
 			voltage, ctime(&t));
 	    	    fflush(fp);
@@ -515,13 +592,16 @@ abort:
     printf("Type Ctrl-C to quit definitively\n");
     stopflag = 0;
     while(stopflag == 0) {
-	digitalWrite (ENDLED, LOW) ;
+	//digitalWrite (ENDLED, LOW) ;
+	endledon();
 	delay(1000);
-        digitalWrite (ENDLED, HIGH) ;
+        //digitalWrite (ENDLED, HIGH) ;
+	endledoff();
 	delay(1000);
     }
-    digitalWrite (ENDLED, LOW) ;
+    //digitalWrite (ENDLED, LOW) ;
+    endledon();
+    sem_unlink("/semaphore");
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
-
     return 0;
 }
