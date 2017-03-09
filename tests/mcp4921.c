@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
+#include <stdlib.h>
 
 
 #define A0	0	//GPIO 17
@@ -55,10 +56,10 @@ unsigned char bitreverse(unsigned char direct){
 	return rev;
 }
 
-int main (void)
+int main (int argc, char *argv[])
 {
 	unsigned char buf[2], high, low, tmp;
-	unsigned int i, filtered;
+	unsigned int i, filtered, dba;
 	union uval{
 		unsigned short int i;
 		unsigned char buf[2];
@@ -66,6 +67,7 @@ int main (void)
 	//char buffer[2] = "\x05\x55";
 	printf ("Raspberry Pi Test MCP4921\n") ;
 
+	dba = atoi(argv[1]);
 	wiringPiSetup () ;
 	pinMode (A0, OUTPUT) ;
 	pinMode (A1, OUTPUT) ;
@@ -73,8 +75,8 @@ int main (void)
 	pinMode (CS1, OUTPUT) ;
 	//pinMode (REL, OUTPUT) ;
 
-	digitalWrite (A0, LOW) ;	
-	digitalWrite (A1, LOW) ;	
+	digitalWrite (A0, dba & 0x01) ;
+	digitalWrite (A1, dba & 0x02) ;
 	digitalWrite (CS0, HIGH) ;
 	digitalWrite (CS1, HIGH) ;
 	//digitalWrite (REL, LOW) ;

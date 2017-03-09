@@ -1,5 +1,7 @@
 /*
-	 chadeche by J. Ehrlich
+	chadeche by J. Ehrlich
+	Use wiringPi Interface Library released under the GNU LGPLv3 license
+		http://wiringpi.com
  */
 
 #include <stdio.h>
@@ -21,6 +23,7 @@
 #define	CS0	4	//GPIO 23 CS0
 #define	CS1	5	//GPIO 24 CS1
 #define	REL	7	//GPIO 4 commande relais
+#define REL_TEMPORARY	3	//GPIO 22 commande relais carte adresse 1 (temporaire pour cause erreur hardware)
 #define ENDLED  6	//GPIO 6 End of test (red led)
 
 #define CHARGE HIGH
@@ -138,17 +141,15 @@ void initchadeche(void)
     	pinMode (A1, OUTPUT) ;
     	pinMode (CS0, OUTPUT) ;
     	pinMode (CS1, OUTPUT) ;
-    	pinMode (REL, OUTPUT) ;
+	pinMode (dba == 0 ? REL : REL_TEMPORARY, OUTPUT) ;
     	pinMode (ENDLED, OUTPUT) ;
 
-    	//digitalWrite (A0, dba&0x01) ;   // adresse A0=0
-    	//digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    	digitalWrite (CS0, HIGH) ; // deselect DAC
-    	digitalWrite (CS1, HIGH) ; // deselect CAN
+    	digitalWrite (CS0, LOW) ; // deselect DAC
+    	digitalWrite (CS1, LOW) ; // deselect CAN
     	digitalWrite (REL, DISCHARGE) ;  // discharge mode
-    }
-    wiringPiSPISetup(0, 100000); // init SPI interface
-    sem_post(semaphore);
+     }
+     wiringPiSPISetup(0, 100000); // init SPI interface
+     sem_post(semaphore);
 }
 
 /* endled off */
@@ -157,6 +158,7 @@ void endledoff(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    delay(10); // attente stabilisation
     digitalWrite (ENDLED, HIGH) ;
     sem_post(semaphore);
 }
@@ -167,6 +169,7 @@ void endledon(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    delay(10); // attente stabilisation
     digitalWrite (ENDLED, LOW) ;
     sem_post(semaphore);
 }
@@ -177,7 +180,8 @@ int charge(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    digitalWrite (REL, CHARGE) ;  // discharge mode
+    delay(10); // attente stabilisation
+    digitalWrite (dba == 0 ? REL : REL_TEMPORARY, CHARGE) ;  // charge mode
     sem_post(semaphore);
     return 1;
 }
@@ -188,6 +192,8 @@ int discharge(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    delay(10); // attente stabilisation
+    digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
     digitalWrite (REL, DISCHARGE) ;  // discharge mode
     sem_post(semaphore);
     return 0;
@@ -205,13 +211,14 @@ void mcp4921write(unsigned int value)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    delay(10); // attente stabilisation
     val.i = value+4096+8192+16384;
     tmp= val.buf[0];
     val.buf[0] = val.buf[1];
     val.buf[1] = tmp;
-    digitalWrite (CS0, LOW) ;
-    wiringPiSPIDataRW(0, val.buf, 2);
     digitalWrite (CS0, HIGH) ;
+    wiringPiSPIDataRW(0, val.buf, 2);
+    digitalWrite (CS0, LOW) ;
     sem_post(semaphore);
 }
 
@@ -231,10 +238,11 @@ unsigned int mcp3201read()
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    delay(10); // attente stabilisation
     for(i=0, filtered=0 ;i<8; i++){
-        digitalWrite (CS1, LOW) ;
+        digitalWrite (CS1, HIGH) ;
 	wiringPiSPIDataRW(0, val.buf, 2);
-	digitalWrite (CS1, HIGH) ;
+	digitalWrite (CS1, LOW) ;
 	tmp= val.buf[0];
 	val.buf[0] = val.buf[1];
 	val.buf[1] = tmp;
@@ -601,6 +609,7 @@ abort:
     }
     //digitalWrite (ENDLED, LOW) ;
     endledon();
+    discharge();
     sem_unlink("/semaphore");
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
     return 0;
