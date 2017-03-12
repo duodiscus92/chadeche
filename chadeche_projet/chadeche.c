@@ -32,7 +32,8 @@
 typedef enum lang{FR, EN} LANGUAGE;
 
 /* default values */
-#define CAPACITY 1300 /* mAh */
+#define CMIN 100 /* mAh */
+#define CMAX 1300 /* mAh */
 #define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
 #define VMAX 1.75 /* Vcell max during charge */
 #define VMIN 1.0 /* Vcell min */
@@ -50,7 +51,8 @@ typedef enum lang{FR, EN} LANGUAGE;
 LANGUAGE language = EN;
 int	verbose_concise = CONCISE,
 	recordPeriod = RECORDPERIOD,
-	capacity = CAPACITY,
+	cmin = CMIN,
+	cmax = CMAX,
 	ncycle = NCYCLE,
 	dba = DAUGHTER_BOARD_ADRESS,
 	langage = FR;
@@ -280,7 +282,8 @@ void argManager(int argc, char **argv)
     /* Testing and getting parameters */
     /* Paramters are
     -a : daughter board adresse 
-    -c : battery capacity (mAh)
+    -c : battery capacity min (mAh)
+    -C : battery capacity max (mAh)
     -f : filename to record results
     -n : # cycles
     -g : filename configuration
@@ -288,15 +291,19 @@ void argManager(int argc, char **argv)
     -o : offset
     -h : help */
     //while(i>=1){
-    while ((opt = getopt(argc, argv, "a:c:n:f:g:o:p:vm:M:h")) != -1) {	
+    while ((opt = getopt(argc, argv, "a:c:C:n:f:g:o:p:vm:M:h")) != -1) {	
     switch(opt){
 	/* is it daughter board adress ?*/
         case 'a':
 	    dba = atoi(optarg);
 	    break;
-	/* is it battery capacity ?*/
+	/* is it battery capacity min ?*/
 	case 'c':
-	    capacity = atoi(optarg);
+	    cmin = atoi(optarg);
+	    break;
+	/* is it battery capacity max ?*/
+	case 'C':
+	    cmax = atoi(optarg);
 	    break;
 	/* is it number of cycle ?*/
 	case 'n':
@@ -334,15 +341,16 @@ void argManager(int argc, char **argv)
 	case 'h':
 	    printf("Syntax: chadeche <option>\n");
 	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
-	    printf("\t-c battery capacity (mAh, def = %d)\n", CAPACITY);
+	    printf("\t-c battery capacity min (mAh, def = %d)\n", CMIN);
+	    printf("\t-C battery capacity max (mAh, def = %d)\n", CMAX);
 	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
 	    printf("\t-f results filename (def = %s)\n",RESULTS_FILENAME);
 	    printf("\t-g config filename (def = %s)\n", CONFIG_FILENAME);
-	    printf("\t-p record period (seconds)\n");
+	    printf("\t-p record period (seconds, def = %d)\n", RECORDPERIOD);
 	    printf("\t-v activate VERBOSE mode\n");
-	    printf("\t-o offset (volts, def = 0)\n");
-	    printf("\t-m vmin (default is %5.4f\n", VMIN);
-	    printf("\t-M vmin (default is %5.4f\n", VMAX);
+	    printf("\t-o offset (volts, def = %5.4f)\n", OFFSET);
+	    printf("\t-m vmin (default is %5.4f)\n", VMIN);
+	    printf("\t-M vmin (default is %5.4f)\n", VMAX);
 	    printf("\t-h this help\n");
 	    exit(1);
 	default :
@@ -355,9 +363,9 @@ void argManager(int argc, char **argv)
 int main (int argc, char **argv)
 {
     int i, j, repeat, step, dt, peakdetected=0;
-    unsigned int initialData, currentData, milliamp, milliampScaled, mAh;
+    unsigned int initialData, currentData, milliamp, milliampScaled, mAh, stepmAh;
     double voltage;
-    time_t t, totaltime, cycletime, elapsedtime, steptime;
+    time_t t, totaltime, cycletime, elapsedtime, steptime, oldt;
     FILE *fp;
     char cop, decision;
     char *str, *endptr; // for call to function strtol
@@ -371,7 +379,8 @@ int main (int argc, char **argv)
 
     printf("Chadeche test parameters:\n");
     printf("\tDaugther board adress : %d\n", dba);
-    printf("\tBattery capacity : %d\n", capacity); 
+    printf("\tBattery capacity min: %d\n", cmin); 
+    printf("\tBattery capacity max : %d\n", cmax); 
     printf("\tResults filename : %s\n", results_filename);
     printf("\tConfig filename : %s\n", config_filename);
     printf("\tRepeat factor: %d\n", ncycle); 
@@ -468,13 +477,15 @@ int main (int argc, char **argv)
     /* main measurement loop */
     time(&totaltime);
     /* cycle loop */
+    oldt = 0, mAh=0;
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
 	printf("Starting cycle nr.:%2d\n", repeat+1);
     	/* initializing time in second */
     	time(&cycletime);
-	step = 0; elapsedtime = 0;
+	step = 0; elapsedtime = 0, stepmAh=0;
 	/* step loop */
 	while( (tconfig[step].cop !=0) ){
+	    mAh += stepmAh;
 	    time(&steptime);
 	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
 	    printf("Starting step nr.: %2d\n",
@@ -535,20 +546,22 @@ mngdec:		switch(decision){
 		/* verbose mode */
 		//if((verbose_concise == VERBOSE) && !((t-cycletime) % 10) ){
 		dt = verbose_concise == VERBOSE ? 10 : recordPeriod; 
+		/* estimate of mAh in the step */
+	   	stepmAh =((tconfig[step].milliamp * (t-steptime)/3600) * (tconfig[step].cop == 'C' ? 1 : -1));
 		if(!((t-cycletime) % dt) ){
             	    //printf("%c/%02d/%02d mA=%4d E.T.=%6d T.T.=%6d Raw=%3d V=%5.3f %s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
-            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f %s", 
+            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f cap=%d, %s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
-			voltage, ctime(&t));
+			/* battery voltage */voltage, /* current charge level*/mAh+stepmAh, ctime(&t));
             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
             	    fprintf(fp, "%c;%02d;%02d;%1d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
-			voltage, ctime(&t));
+			/* battery voltage */voltage, ctime(&t));
 	    	    fflush(fp);
         	}
 	    	else if(verbose_concise == CONCISE){
@@ -559,6 +572,7 @@ mngdec:		switch(decision){
 	    	delay(1000);
 	    	//time(&t);
 		j++;
+		oldt = t;
 	    }
 nextstep:   step++;
 	}
