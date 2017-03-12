@@ -146,7 +146,7 @@ void initchadeche(void)
 
     	digitalWrite (CS0, LOW) ; // deselect DAC
     	digitalWrite (CS1, LOW) ; // deselect CAN
-    	digitalWrite (REL, DISCHARGE) ;  // discharge mode
+    	digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
      }
      wiringPiSPISetup(0, 100000); // init SPI interface
      sem_post(semaphore);
@@ -194,7 +194,6 @@ int discharge(void)
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     delay(10); // attente stabilisation
     digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
-    digitalWrite (REL, DISCHARGE) ;  // discharge mode
     sem_post(semaphore);
     return 0;
 }
@@ -275,7 +274,7 @@ int deltapeak(int rawdata)
 }
 
 /* param manager */
-void argManager(int argc, char **argv)
+void oldargManager(int argc, char **argv)
 {
     int i;
     /* Testing and getting parameters */
@@ -360,6 +359,85 @@ void argManager(int argc, char **argv)
 	    printf("Unknown option or bad syntax\n");
 	    exit(1);
           }
+    }
+}
+
+/* param manager */
+void argManager(int argc, char **argv)
+{
+    int opt;
+    /* Testing and getting parameters */
+    /* Paramters are
+    -a : daughter board adresse 
+    -c : battery capacity (mAh)
+    -f : filename to record results
+    -n : # cycles
+    -g : filename configuration
+    -r : threshold for recording
+    -o : offset
+    -h : help */
+    //while(i>=1){
+    while ((opt = getopt(argc, argv, "a:c:n:f:g:o:p:vm:M:h")) != -1) {	
+    switch(opt){
+	/* is it daughter board adress ?*/
+        case 'a':
+	    dba = atoi(optarg);
+	    break;
+	/* is it battery capacity ?*/
+	case 'c':
+	    capacity = atoi(optarg);
+	    break;
+	/* is it number of cycle ?*/
+	case 'n':
+	    ncycle = atoi(optarg);
+	    break;
+	/* is it filename ?*/
+	case 'f':
+	    strcpy(results_filename, optarg);
+	    break;
+	/* is it config filename ?*/
+	case 'g':
+	    strcpy(config_filename, optarg);
+	    break;
+	/* is it offset ? */
+	case 'o':
+	    offset = atof(optarg);
+	    break;
+	/* is it recordPeriod */
+	case 'p':
+	    recordPeriod = atoi(optarg);
+	    break;
+	/* is it verbose_concise */
+	case 'v':
+	    verbose_concise = VERBOSE;
+	    break;
+	/* is it offset vmin */
+	case 'm':
+	    vmin = atof(optarg);
+	    break;
+	/* is it offset vmaw */
+	case 'M':
+	    vmax= atof(optarg);
+	    break;
+	/* is it help */
+	case 'h':
+	    printf("Syntax: chadeche <option>\n");
+	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
+	    printf("\t-c battery capacity (mAh, def = %d)\n", CAPACITY);
+	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
+	    printf("\t-f results filename (def = %s)\n",RESULTS_FILENAME);
+	    printf("\t-g config filename (def = %s)\n", CONFIG_FILENAME);
+	    printf("\t-p record period (seconds)\n");
+	    printf("\t-v activate VERBOSE mode\n");
+	    printf("\t-o offset (volts, def = 0)\n");
+	    printf("\t-m vmin (default is %5.4f\n", VMIN);
+	    printf("\t-M vmin (default is %5.4f\n", VMAX);
+	    printf("\t-h this help\n");
+	    exit(1);
+	default :
+	    printf("Unknown option or bad syntax\n");
+	    exit(1);
+    }
     }
 }
 
