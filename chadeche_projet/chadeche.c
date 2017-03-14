@@ -32,6 +32,7 @@
 typedef enum lang{FR, EN} LANGUAGE;
 
 /* default values */
+#define CINIT 0 /* mAh */
 #define CMIN 100 /* mAh */
 #define CMAX 1300 /* mAh */
 #define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
@@ -53,6 +54,7 @@ int	verbose_concise = CONCISE,
 	recordPeriod = RECORDPERIOD,
 	cmin = CMIN,
 	cmax = CMAX,
+	cinit = CINIT,
 	ncycle = NCYCLE,
 	dba = DAUGHTER_BOARD_ADRESS,
 	langage = FR;
@@ -73,6 +75,9 @@ typedef struct config {
 	int duration;
 	char toolow[5];
 	char toohigh[5];
+	char toolowcapacity[5];
+	char toohighcapacity[5];
+	char always[5];
 	char controlflag[5];
 	char comment[80];
 } CONFIG;
@@ -90,15 +95,21 @@ void readconf(char *filename)
 	    exit(1);
 	}
 
+	/* first line always ignored */
+	fgets(buffer, 80, fp);
 	while (!feof(fp)) {
 	    fgets(buffer, 80, fp);
-	    sscanf(buffer, "%d;%c;%d;%d;%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-]\n",
+	    //sscanf(buffer, "%d;%c;%d;%d;%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-]\n",
+	    sscanf(buffer, "%d\t%c\t%d\t%d\t%[A-Z0-9\\-]\t%[A-Z0-9\\-]\t%[A-Z0-9\\-]\t%[A-Z0-9\\-]\t%[A-Z0-9\\-]\t%[A-Z0-9\\-]\n",
 		&(tconfig[i].adr),
 		&(tconfig[i].cop),
 		&(tconfig[i].milliamp),
 		&(tconfig[i].duration),
 		tconfig[i].toolow,
 		tconfig[i].toohigh,
+		tconfig[i].toolowcapacity,
+		tconfig[i].toohighcapacity,
+		tconfig[i].always,
 		tconfig[i].controlflag);
 	    strcpy(tconfig[i].comment, strchr(buffer, '#')+1);
 	    i++;
@@ -160,7 +171,7 @@ void endledoff(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(10); // attente stabilisation
     digitalWrite (ENDLED, HIGH) ;
     sem_post(semaphore);
 }
@@ -171,7 +182,7 @@ void endledon(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(10); // attente stabilisation
     digitalWrite (ENDLED, LOW) ;
     sem_post(semaphore);
 }
@@ -182,7 +193,7 @@ int charge(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(5); // attente stabilisation
     digitalWrite (dba == 0 ? REL : REL_TEMPORARY, CHARGE) ;  // charge mode
     sem_post(semaphore);
     return 1;
@@ -194,7 +205,7 @@ int discharge(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(5); // attente stabilisation
     digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
     sem_post(semaphore);
     return 0;
@@ -212,7 +223,7 @@ void mcp4921write(unsigned int value)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(2); // attente stabilisation
     val.i = value+4096+8192+16384;
     tmp= val.buf[0];
     val.buf[0] = val.buf[1];
@@ -239,7 +250,7 @@ unsigned int mcp3201read()
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    delay(10); // attente stabilisation
+    //delay(2); // attente stabilisation
     for(i=0, filtered=0 ;i<8; i++){
         digitalWrite (CS1, HIGH) ;
 	wiringPiSPIDataRW(0, val.buf, 2);
@@ -281,7 +292,8 @@ void argManager(int argc, char **argv)
     int opt;
     /* Testing and getting parameters */
     /* Paramters are
-    -a : daughter board adresse 
+    -a : daughter board adresse
+    -i : initial capacity
     -c : battery capacity min (mAh)
     -C : battery capacity max (mAh)
     -f : filename to record results
@@ -291,7 +303,7 @@ void argManager(int argc, char **argv)
     -o : offset
     -h : help */
     //while(i>=1){
-    while ((opt = getopt(argc, argv, "a:c:C:n:f:g:o:p:vm:M:h")) != -1) {	
+    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:o:p:vm:M:h")) != -1) {	
     switch(opt){
 	/* is it daughter board adress ?*/
         case 'a':
@@ -304,6 +316,10 @@ void argManager(int argc, char **argv)
 	/* is it battery capacity max ?*/
 	case 'C':
 	    cmax = atoi(optarg);
+	    break;
+	/* is it battery initial capacity ?*/
+	case 'i':
+	    cinit = atoi(optarg);
 	    break;
 	/* is it number of cycle ?*/
 	case 'n':
@@ -341,6 +357,7 @@ void argManager(int argc, char **argv)
 	case 'h':
 	    printf("Syntax: chadeche <option>\n");
 	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
+	    printf("\t-c initial battery capacity (mAh, def = %d)\n", CINIT);
 	    printf("\t-c battery capacity min (mAh, def = %d)\n", CMIN);
 	    printf("\t-C battery capacity max (mAh, def = %d)\n", CMAX);
 	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
@@ -360,18 +377,47 @@ void argManager(int argc, char **argv)
     }
 }
 
+/* return a step number from its adress */
+int adress2step(int adress)
+{
+    int step;
+
+    for (step = 0; tconfig[step].cop != 0; step++)
+	if (tconfig[step].adr == adress)
+	    return step;
+    return -1;
+}  
+
 int main (int argc, char **argv)
 {
-    int i, j, repeat, step, dt, peakdetected=0;
-    unsigned int initialData, currentData, milliamp, milliampScaled, mAh, stepmAh;
-    double voltage;
-    time_t t, totaltime, cycletime, elapsedtime, steptime, oldt;
+    int i, j, repeat, step, dt, peakdetected=0, milliampScaled, mAh/*, stepmAh*/;
+    unsigned int initialData, currentData, milliamp;
+    double voltage, fmAh;
+    time_t t, totaltime, cycletime, elapsedtime, steptime, looptime;
     FILE *fp;
     char cop, decision;
     char *str, *endptr; // for call to function strtol
-    int adress; // for Jump
+    int jumpadress; // for Jump
     struct sigaction act;
-    enum cause {TOOLOW_DETECT, TOOHIGH_DETECT, CONTROLZ_DETECT} decisioncause;
+    enum cause {
+	NO_CAUSE,
+	ALWAYS,
+	VMAXOPEN_DETECT,
+	TOOLOW_DETECT, TOOHIGH_DETECT, 
+	TOOLOWCAPACITY_DETECT, TOOHIGHCAPACITY_DETECT,
+	CONTROLZ_DETECT} decisioncause = NO_CAUSE;
+
+    char *msgcause[]= {
+	"Normal step starting",
+	"Unconditional jump",
+	"Battery voltage overflow on open cicuit", 
+	"Battery voltage < low threshold",
+	"Battery voltage > high threshold",
+	"Battery capacity underflow",
+	"Battery capacity overflow",
+	"Contrl-Z"
+    };
+
 
 
     /* initialisation par défaut et gestion des arguments */
@@ -379,6 +425,7 @@ int main (int argc, char **argv)
 
     printf("Chadeche test parameters:\n");
     printf("\tDaugther board adress : %d\n", dba);
+    printf("\tInitial battery capacity : %d\n", cinit); 
     printf("\tBattery capacity min: %d\n", cmin); 
     printf("\tBattery capacity max : %d\n", cmax); 
     printf("\tResults filename : %s\n", results_filename);
@@ -395,27 +442,34 @@ int main (int argc, char **argv)
     /* lecture et mémorisation fichier de config */
     readconf(config_filename);
     /* presentation de l'essai */
-    i = elapsedtime = mAh = 0;
+    i = elapsedtime = 0;
     printf("Battery test sequence will be as follow ...\n");
-    printf("ADR\tCOP\tmA\tS\tL\tH\tC\tmAh\tSTD\tComment\n");
-    while(tconfig[i].cop != 0){
-	printf("%d\t%c\t%d\t%d",
+    printf("STEP\t|\tADR\tCOP\tmA\tS\tL\tH\tLmAh\tHmAh\tTRUE\tCtrlZ\t|\tEmAh\tSTD\tComment\n");
+    //while(tconfig[i].cop != 0){
+    for(i = 0, mAh = cinit; tconfig[i].cop != 0; i++){
+	printf("%d\t|\t%d\t%c\t%d\t%d",
+	    i+1,
 	    tconfig[i].adr,					// numero ligne
 	    tconfig[i].cop, 					// code opération
 	    tconfig[i].milliamp,				//courant de charge ou décharge
 	    tconfig[i].duration);				// durée de l'étape
-	    adress = strtol(str = (tconfig[i].toolow),  &endptr, 10);
-	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
-	    adress = strtol(str = (tconfig[i].toohigh),  &endptr, 10);
-	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
-	    adress = strtol(str = (tconfig[i].controlflag),  &endptr, 10);
-	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", adress);
-	    printf("\t%d\t%d\t%s",
+	    jumpadress = strtol(str = (tconfig[i].toolow),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    jumpadress = strtol(str = (tconfig[i].toohigh),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    jumpadress = strtol(str = (tconfig[i].toolowcapacity),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    jumpadress = strtol(str = (tconfig[i].toohighcapacity),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    jumpadress = strtol(str = (tconfig[i].always),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    jumpadress = strtol(str = (tconfig[i].controlflag),  &endptr, 10);
+	    endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
+	    printf("\t|\t%d\t%d\t%s",
 	    mAh +=						// mAh cumulés
 		((tconfig[i].milliamp*tconfig[i].duration/3600)* (tconfig[i].cop == 'C' ? 1 : -1)),
 	    elapsedtime += tconfig[i].duration,			// temps total depuis le début de l'essai
 	    tconfig[i].comment);
-	i++;
     }
 
     /* installing the Ctrl-C handler */
@@ -464,8 +518,10 @@ int main (int argc, char **argv)
 
     /* verify that Vcell don't exceed Vmax_open */
     //if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
-    if((voltage = (double)currentData/1000 + offset) >= VMAX_OPEN)
+    if((voltage = (double)currentData/1000 + offset) >= VMAX_OPEN){
+	decisioncause = VMAXOPEN_DETECT;
 	goto abort;
+    }
 
    /* creating  the file to record results */
     if((fp = fopen(results_filename,  "w+x"))==NULL){
@@ -477,28 +533,21 @@ int main (int argc, char **argv)
     /* main measurement loop */
     time(&totaltime);
     /* cycle loop */
-    oldt = 0, mAh=0;
+    fmAh=cinit; elapsedtime = 0;
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
 	printf("Starting cycle nr.:%2d\n", repeat+1);
     	/* initializing time in second */
     	time(&cycletime);
-	step = 0; elapsedtime = 0, stepmAh=0;
+	step = 0; /*stepmAh=0*/;
 	/* step loop */
-	while( (tconfig[step].cop !=0) ){
-	    mAh += stepmAh;
+	//while( (tconfig[step].cop !=0) ){
+	for(step = 0;  (tconfig[step].cop !=0); step++){
+	    /*mAh += stepmAh;*/
 	    time(&steptime);
+	    t = steptime;
 	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
-	    printf("Starting step nr.: %2d\n",
-		step+1
-		//cop = tconfig[step].cop,
-	    	//tconfig[step].milliamp,
-	    	//tconfig[step].duration,
-	    	//tconfig[step].milliamp*tconfig[step].duration/3600,
-	    	//elapsedtime += tconfig[step].duration,
-	    	//tconfig[step].comment
-		);
+	    printf("Starting step nr.%2d (%s): %s", step+1,  msgcause[decisioncause], tconfig[step].comment);
 	    /* set the relay for the current mode */
-	    //digitalWrite (REL, (cop=tconfig[step].cop) == 'D' ? DISCHARGE : CHARGE) ;
 	    (cop=tconfig[step].cop) == 'D' ? discharge() : charge() ;
 	    /* set the current to the desired value */
 	    milliampScaled = tconfig[step].milliamp*10;
@@ -506,57 +555,78 @@ int main (int argc, char **argv)
 
 	    j=0;
 	    /* data acquisition and logging loop */
-	    while( (time(&t)-steptime) <= tconfig[step].duration ){
+	    while( (t-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
 	        voltage = (double)currentData/1000 + offset;
 	        //voltage = (double)currentData*0.9758*5.1/4096 + offset;
                 //voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
+		decisioncause = NO_CAUSE;
 		if(stopflag == 1 || peakdetected)
 		    goto abort;
 		if(voltage <= vmin){
-		    printf("Evenement : V < Vmin\n");
-	    	    adress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
+		    //printf("Event : V < Vmin\n");
+	    	    jumpadress = strtol(str = (tconfig[step].toolow),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-		    if(decision != 'I') goto mngdec;
+		    fmAh = 0;
+		    //decisioncause = TOOLOW_DETECT;
+		    decisioncause = decision == 'I' ? NO_CAUSE : TOOLOW_DETECT;
+		    //if(decision != 'I') goto mngdec;
 		}
-		/*else*/ if(voltage >= vmax){
-		    printf("Evenement : V > Vmax\n");
-	     	    adress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
+		/*else*/ if(voltage >= vmax && decision == 'I'){
+		    //printf("Event : V > Vmax\n");
+	     	    jumpadress = strtol(str = (tconfig[step].toohigh),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-	  	    if(decision != 'I') goto mngdec;
+		    //decisioncause = TOOHIGH_DETECT;
+		    decisioncause = decision == 'I' ? NO_CAUSE : TOOHIGH_DETECT;
+	  	    //if(decision != 'I') goto mngdec;
 		}
-		/*else*/ if(controlflag == 1){
-		    printf("Evenement : Ctrl-Z\n");
+		/*else*/ if( (fmAh /*+ stepmAh*/) < cmin /*&& cop == 'D'*/ && decision == 'I'){
+		    //printf("Event : batt. capacity underflow\n");
+	     	    jumpadress = strtol(str = (tconfig[step].toolowcapacity),  &endptr, 10);
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
+		    //decisioncause = CAPACITY_DETECT;
+		    decisioncause = decision == 'I' ? NO_CAUSE : TOOLOWCAPACITY_DETECT;
+	  	    //if(decision != 'I') goto mngdec;
+		}
+		/*else*/ if( (fmAh /*+ stepmAh*/) > cmax /*&& cop == 'C'*/ && decision == 'I'){
+		    //printf("Event : batt. capacity overflow\n");
+	     	    jumpadress = strtol(str = (tconfig[step].toohighcapacity),  &endptr, 10);
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
+		    //decisioncause = CAPACITY_DETECT;
+		    decisioncause = decision == 'I' ? NO_CAUSE : TOOHIGHCAPACITY_DETECT;
+	  	    //if(decision != 'I') goto mngdec;
+		}
+		/*else*/ if(controlflag == 1 && decision == 'I'){
+		    //printf("Event : Ctrl-Z\n");
 		    controlflag = 0;
-		    adress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
+		    jumpadress = strtol(str = (tconfig[step].controlflag),  &endptr, 10);
 		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
-		    decisioncause = CONTROLZ_DETECT;
+		    //decisioncause = CONTROLZ_DETECT;
+		    decisioncause = decision == 'I' ? NO_CAUSE : CONTROLZ_DETECT;
 	  	    /*if(decision != 'I') goto mngdec;*/
 		}
-mngdec:		switch(decision){
-		case 'A' : goto abort;		// abort
-		case 'S' : goto nextstep;	// next step
-		case 'C' : goto nextcycle;	// next cycle
-		case 'J' : step = adress-1;	// Jump 
-		case 'I' : break;		// ignore (do nothin)
-		default :  break;
+		/*else*/ if(decision == 'I'){
+		    //printf("Event : Always\n");
+		    jumpadress = strtol(str = (tconfig[step].always),  &endptr, 10);
+		    decision =  ((endptr == str) ? str[0] : 'J'); /* J = Jump */
+		    //decisioncause = ALWAYS;
+		    decisioncause = decision == 'I' ? NO_CAUSE : ALWAYS;
+	  	    /*if(decision != 'I') goto mngdec;*/
 		}
 		/* verbose mode */
 		//if((verbose_concise == VERBOSE) && !((t-cycletime) % 10) ){
 		dt = verbose_concise == VERBOSE ? 10 : recordPeriod; 
-		/* estimate of mAh in the step */
-	   	stepmAh =((tconfig[step].milliamp * (t-steptime)/3600) * (tconfig[step].cop == 'C' ? 1 : -1));
 		if(!((t-cycletime) % dt) ){
             	    //printf("%c/%02d/%02d mA=%4d E.T.=%6d T.T.=%6d Raw=%3d V=%5.3f %s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
-            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f cap=%d, %s", 
+            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f mAh=%5.1f, %s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
-			/* battery voltage */voltage, /* current charge level*/mAh+stepmAh, ctime(&t));
-            	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
+			/* battery voltage */voltage, /* current charge level*/fmAh/*+stepmAh*/, ctime(&t));
+             	    //fprintf(fp, "%c;%02d;%02d;%4d;%6d;%6d;%3d;%5.3f;%s", cop, repeat+1, step+1, tconfig[step].milliamp, t-cycletime, t-totaltime, currentData, voltage, ctime(&t));
             	    fprintf(fp, "%c;%02d;%02d;%1d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
@@ -568,34 +638,67 @@ mngdec:		switch(decision){
 		    printf("."); fflush(stdout);
                     if((j%50) == 0) printf("\n");
             	}
+		j++;
 		/* wait for 1 sec before next battery voltage measurement */ 
 	    	delay(1000);
 	    	//time(&t);
-		j++;
-		oldt = t;
-	    }
-nextstep:   step++;
-	}
+		/* estimate of mAh in the step */
+		time(&looptime);
+		elapsedtime = looptime-t;
+		t = looptime;
+	   	/*step*/fmAh += ( (tconfig[step].milliamp * /*(t-steptime)*/elapsedtime/3600.0) * (tconfig[step].cop == 'C' ? 1 : -1) );
+		if (fmAh <= 0) fmAh = 0;
+		/* appliquer la décision */
+mngdec:		switch(decision){
+		    case 'A' : goto abort;		// abort
+		    case 'S' : goto nextstep;	// next step
+		    case 'C' : goto nextcycle;	// next cycle
+		    case 'J' : step = adress2step(jumpadress)-1;	// Jump
+			       goto nextstep; 
+		    case 'I' : break;		// ignore (do nothin)
+		    default :  break;
+		}
+	    } /* end data acquisition loop */
+nextstep:;   /*step++;*/
+	} /* end step loop */
 nextcycle:  repeat++;
-    }
+    } /* end cycle loop */
 abort:
     fclose(fp);
 
-    /* testing why the test ends */
-    if (voltage >= vmax)
-    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, vmax);
-    else if (voltage >= VMAX_OPEN)
-    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, VMAX_OPEN);
-    else if (voltage <= vmin)
-    	printf ("\nBattery test ends because battery voltage = %5.3f is <= %4.2f Volts\n", voltage, vmin);
-    else if (peakdetected)
+    if (peakdetected)
     	printf ("\nBattery test ends because battery peak detected with voltage = %5.3f\n", voltage);
     else if (stopflag==1)
     	printf ("\nBattery test ends due to Ctrl-C occurence. Battery voltage is = %5.3f\n", voltage);
-    else if (decisioncause == CONTROLZ_DETECT)
+    /* testing why the test ends */
+    else{
+    switch(decisioncause) {
+    case VMAXOPEN_DETECT:
+    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, VMAX_OPEN);
+	break;
+    case TOOLOW_DETECT:
+    	printf ("\nBattery test ends because battery voltage = %5.3f is <= %4.2f Volts\n", voltage, vmin);
+	break;
+    case TOOHIGH_DETECT:
+    	printf ("\nBattery test ends because battery voltage = %5.3f is >= %4.2f Volts\n", voltage, vmax);
+	break;
+    case TOOLOWCAPACITY_DETECT:
+    	printf ("\nBattery test ends due to capacity underflow %d <= %5.1f <= %d mAh\n", cmin, fmAh, cmax);
+	break;
+    case TOOHIGHCAPACITY_DETECT:
+    	printf ("\nBattery test ends due to capacity ovderflow %d <= %5.1f <= %d mAh\n", cmin, fmAh, cmax);
+	break;
+    case CONTROLZ_DETECT:
     	printf ("\nBattery test ends due to Ctrl-Z occurence. Battery voltage is = %5.3f\n", voltage);
-    else
-	printf ("\nBattery test because test is complete (normal condition)\n");
+	break;
+    case ALWAYS:
+    	printf ("\nBattery test ends due to unconditionnal abort. Battery voltage is = %5.3f\n", voltage);
+	break;
+    default:
+        printf ("\nBattery test because test is complete (normal condition)\n");
+	break;
+    }
+    }
 
     printf("Setting the discharge current to zero\n");
     mcp4921write(0);
