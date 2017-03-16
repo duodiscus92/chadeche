@@ -1,4 +1,4 @@
-/*
+ /*
 	chadeche by J. Ehrlich
 	Use wiringPi Interface Library released under the GNU LGPLv3 license
 		http://wiringpi.com
@@ -15,9 +15,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/shm.h>
+#include <sys/ipc.h>
 
 
-
+#define NB_BOARD 4	//max number of daugther board
 #define A0	0	//GPIO 17
 #define A1	2	//GPIO 27
 #define	CS0	4	//GPIO 23 CS0
@@ -28,7 +30,7 @@
 
 #define CHARGE HIGH
 #define DISCHARGE LOW
-
+#define MEM_KEY	3245617	// chared memory key for shmget()
 typedef enum lang{FR, EN} LANGUAGE;
 
 /* default values */
@@ -48,7 +50,7 @@ typedef enum lang{FR, EN} LANGUAGE;
 #define NCYCLE 1
 #define DAUGHTER_BOARD_ADRESS 0
 
-/* parameters et valeurs part défaut */
+/* parameters et valeurs par défaut */
 LANGUAGE language = EN;
 int	verbose_concise = CONCISE,
 	recordPeriod = RECORDPERIOD,
@@ -398,7 +400,9 @@ int main (int argc, char **argv)
     char cop, decision;
     char *str, *endptr; // for call to function strtol
     int jumpadress; // for Jump
-    struct sigaction act;
+    struct sigaction act; // for ctrlZ management
+
+    /* end of step cause id */
     enum cause {
 	NO_CAUSE,
 	ALWAYS,
@@ -407,6 +411,7 @@ int main (int argc, char **argv)
 	TOOLOWCAPACITY_DETECT, TOOHIGHCAPACITY_DETECT,
 	CONTROLZ_DETECT} decisioncause = NO_CAUSE;
 
+    /* message to explain end fo step cause */
     char *msgcause[]= {
 	"Normal step starting",
 	"Unconditional jump",
@@ -417,6 +422,17 @@ int main (int argc, char **argv)
 	"Battery capacity overflow",
 	"Contrl-Z"
     };
+
+    /* data for shared memory */
+    struct procdesc {
+	int nprocess;
+	int tprocess[NB_BOARD];
+    };
+    key_t key = MEM_KEY;
+    pid_t pid;
+    int mid;
+    struct procdesc *p;
+
 
 
 
@@ -483,17 +499,72 @@ int main (int argc, char **argv)
 	exit(1);
     }
 
-    /* semaphore creation ans initialization */
+#ifdef SHAREDMEMORY
+    /* shared memory creation and attachement */
+    printf("Trying to create shared memorey using key = %d\n", key);
+    if ((mid= shmget(key, sizeof (struct procdesc), IPC_CREAT | IPC_EXCL | 0666 )) == -1) {
+	perror("shmget : attention : la mémoire existe déjà");
+        if ((mid= shmget(key, sizeof (struct procdesc), IPC_CREAT | 0666 )) == -1) {
+	    perror("shmget : erreur la mémoire existe déja et impossible y acceder");
+	    exit(1);
+	}
+	else
+	   printf("An already exisitng shared memodry will be used with mid = %ld\n", mid);
+    }
+    else
+	printf("A new shared memory is created with mid = %ld\n", mid);
+
+
+    if ((p = shmat(mid, NULL, 0)) == (struct procdesc *)-1) {
+	perror("shmat: unable to attach shared memory");
+    	if (shmctl(mid, IPC_RMID, NULL) == -1)
+	    perror("shmctl: unable to free shared memory");
+	exit(1);
+	//goto endchadeche;
+    }
+#endif
+
+    /* semaphore creation and initialization */
     semaphore = sem_open("/semaphore", O_CREAT | O_RDWR | O_EXCL, 0600, 1);
     if (semaphore == SEM_FAILED) {
 	perror("/semaphore");
 	semaphore = sem_open("/semaphore", O_RDWR);
 	if (semaphore == SEM_FAILED) {
-	    perror("/semaphore");
-	    exit(EXIT_FAILURE);
+#ifdef SHAREDMEMORY
+    	    if (shmdt(p) == -1)
+	    	perror("shmdt : unable to detach shared memry");
+	    else
+		printf("Shared memroy deteched\n");
+#endif
+	    perror("/semaphore : Unable to open existing semaphore\n");
+	    exit(1);
+	    //goto endchadeche;
 	 }
-	firstcall = 0;
+	 firstcall = 0;
      }
+
+#ifdef SHAREDMEMORY
+     /* shared memory test and initialisation */
+     sem_wait(semaphore);
+     if(p->tprocess[dba] != 0){
+	sem_post(semaphore);
+	perror("A process using this board already exists");
+    	if (shmdt(p) == -1)
+	    perror("shmdt : unable to detach shared memry");
+	else
+	    printf("Shared memroy detached\n");
+    	//if (shmctl(mid, IPC_RMID, NULL) == -1)
+	    //perror("shmctl: unable to free shared memory");
+	sem_unlink("/semaphore");
+	exit(1);
+	//goto endchadeche;
+     }
+     else {
+     	p->nprocess++;
+     	p->tprocess[dba] = p->nprocess; 
+     	sem_post(semaphore);
+     }
+#endif
      /* Rpi initialization */
     initchadeche();
 
@@ -524,10 +595,28 @@ int main (int argc, char **argv)
     }
 
    /* creating  the file to record results */
-    if((fp = fopen(results_filename,  "w+x"))==NULL){
+    //if((fp = fopen(results_filename,  "w+x"))==NULL){
+    if((fp = fopen(results_filename,  "a+"))==NULL){
 	printf("Program aborted : can't open results file : %s\n",results_filename);
-	sem_unlink("/semaphore");
+ #ifdef SHAREDMEMORY
+ 	if (shmdt(p) == -1)
+	    perror("shmdt : unable to detach shared memry");
+	else
+	    printf("Shared memroy deteched\n");
+	sem_wait(semaphore);
+ 	p->nprocess--;
+ 	p->tprocess[dba] = 0; 
+ 	if(p->nprocess == 0){
+	    sem_post(semaphore);
+	    sem_close(semaphore);
+	    if (shmctl(mid, IPC_RMID, NULL) == -1)
+	    	perror("shmctl: unable to free shared memory");
+	}
+	else
+#endif
+	    sem_unlink("/semaphore");
 	exit(1);
+	//goto endchadeche;
     }
 
     /* main measurement loop */
@@ -700,6 +789,7 @@ abort:
     }
     }
 
+//endchadeche:
     printf("Setting the discharge current to zero\n");
     mcp4921write(0);
     /* switching the end led (red) on */
@@ -716,6 +806,24 @@ abort:
     //digitalWrite (ENDLED, LOW) ;
     endledon();
     discharge();
+    /* clear shared memory */
+#ifdef SHAREDMEMORY
+    if (shmdt(p) == -1)
+	perror("shmdt : unable to detach shared memory");
+    else
+	printf("Shared memroy detached\n");
+    sem_wait(semaphore);
+    p->nprocess--;
+    p->tprocess[dba] = 0; 
+    if(p->nprocess == 0){
+	sem_post(semaphore);
+	sem_close(semaphore);
+	if (shmctl(mid, IPC_RMID, NULL) == -1)
+	    perror("shmctl: unable to free shared memory");
+    }
+    else
+	sem_post(semaphore);
+#endif
     sem_unlink("/semaphore");
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
     return 0;
