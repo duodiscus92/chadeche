@@ -16,7 +16,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/shm.h>
-#include <sys/ipc.h>
+//#include <sys/ipc.h>
+#include <sys/mman.h>
 
 
 #define NB_BOARD 4	//max number of daugther board
@@ -30,7 +31,8 @@
 
 #define CHARGE HIGH
 #define DISCHARGE LOW
-#define MEM_KEY	3245617	// chared memory key for shmget()
+//#define MEM_KEY	3245617	// chared memory key for shmget()
+#define MEM_NAME "/sharedmem"
 typedef enum lang{FR, EN} LANGUAGE;
 
 /* default values */
@@ -390,6 +392,13 @@ int adress2step(int adress)
     return -1;
 }  
 
+/* data for shared memory */
+struct procdesc {
+    int nprocess;
+    int tprocess[NB_BOARD];
+};
+struct procdesc *p;
+
 int main (int argc, char **argv)
 {
     int i, j, repeat, step, dt, peakdetected=0, milliampScaled, mAh/*, stepmAh*/;
@@ -423,18 +432,7 @@ int main (int argc, char **argv)
 	"Contrl-Z"
     };
 
-    /* data for shared memory */
-    struct procdesc {
-	int nprocess;
-	int tprocess[NB_BOARD];
-    };
-    key_t key = MEM_KEY;
-    pid_t pid;
     int mid;
-    struct procdesc *p;
-
-
-
 
     /* initialisation par défaut et gestion des arguments */
     argManager(argc, argv);
@@ -500,69 +498,80 @@ int main (int argc, char **argv)
     }
 
 #ifdef SHAREDMEMORY
-    /* shared memory creation and attachement */
-    printf("Trying to create shared memorey using key = %d\n", key);
-    if ((mid= shmget(key, sizeof (struct procdesc), IPC_CREAT | IPC_EXCL | 0666 )) == -1) {
-	perror("shmget : attention : la mémoire existe déjà");
-        if ((mid= shmget(key, sizeof (struct procdesc), IPC_CREAT | 0666 )) == -1) {
-	    perror("shmget : erreur la mémoire existe déja et impossible y acceder");
+    /* shared memory creation */
+#ifdef DEBUG
+    printf("Trying to create shared memorey using name = %s\n", MEM_NAME);
+#endif
+    if ((mid= shm_open(MEM_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH )) == -1) {
+	//perror("shm_open : warning : shared memory already exists");
+	if ((mid= shm_open(MEM_NAME, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH )) == -1) {
+	    perror("shm_open : error : memory already exists and unable to opent it");
 	    exit(1);
 	}
+#ifdef DEBUG
 	else
-	   printf("An already exisitng shared memodry will be used with mid = %ld\n", mid);
+	   printf("An already exisitng shared memory will be used with mid = %ld\n", mid);
+#endif
     }
+#ifdef DEBUG
     else
 	printf("A new shared memory is created with mid = %ld\n", mid);
-
-
-    if ((p = shmat(mid, NULL, 0)) == (struct procdesc *)-1) {
-	perror("shmat: unable to attach shared memory");
-    	if (shmctl(mid, IPC_RMID, NULL) == -1)
-	    perror("shmctl: unable to free shared memory");
+#endif
+    /* shared memory mapping */
+    ftruncate(mid, sizeof(struct procdesc));
+    if ((p = mmap(p, sizeof(struct procdesc), PROT_READ | PROT_WRITE, MAP_SHARED, mid, 0)) == (struct procdesc *)-1) {
+	perror("mmap: unable to map shared memory");
+    	if (shm_unlink(MEM_NAME) == -1)
+	    perror("shm_unlink: unable to free shared memory");
 	exit(1);
-	//goto endchadeche;
     }
+#ifdef DEBUG
+    else
+	printf("mmap: memory mapped\n");
+#endif
 #endif
 
     /* semaphore creation and initialization */
     semaphore = sem_open("/semaphore", O_CREAT | O_RDWR | O_EXCL, 0600, 1);
     if (semaphore == SEM_FAILED) {
-	perror("/semaphore");
+	//perror("/semaphore");
 	semaphore = sem_open("/semaphore", O_RDWR);
 	if (semaphore == SEM_FAILED) {
-#ifdef SHAREDMEMORY
-    	    if (shmdt(p) == -1)
-	    	perror("shmdt : unable to detach shared memry");
-	    else
-		printf("Shared memroy deteched\n");
-#endif
 	    perror("/semaphore : Unable to open existing semaphore\n");
+#ifdef SHAREDMEMORY
+    	    if (munmap(p, sizeof(struct procdesc)) == -1)
+	    	perror("munmap : unable to unmap shared memry");
+#endif
 	    exit(1);
-	    //goto endchadeche;
 	 }
-	 firstcall = 0;
      }
-
+     else{
+	firstcall = 0;
+#ifdef DEBUG
+	printf("semaphore  created\n");
+#endif
+     }
 #ifdef SHAREDMEMORY
      /* shared memory test and initialisation */
      sem_wait(semaphore);
      if(p->tprocess[dba] != 0){
 	sem_post(semaphore);
-	perror("A process using this board already exists");
-    	if (shmdt(p) == -1)
-	    perror("shmdt : unable to detach shared memry");
+	printf("Program aborted !!! A process nr. %d is already using this board nr. %d\n", p->tprocess[dba], dba);
+    	if (munmap(p, sizeof(struct procdesc)) == -1)
+	    perror("munmap : unable to unmap shared memry");
+#ifdef DEBUG
 	else
-	    printf("Shared memroy detached\n");
-    	//if (shmctl(mid, IPC_RMID, NULL) == -1)
-	    //perror("shmctl: unable to free shared memory");
-	sem_unlink("/semaphore");
+	    printf("Unmapping shared memory before exiting\n");
+#endif
 	exit(1);
-	//goto endchadeche;
      }
      else {
      	p->nprocess++;
      	p->tprocess[dba] = p->nprocess; 
      	sem_post(semaphore);
+#ifdef DEBUG
+	printf("Process nr. %d launched : Using the board %d\n", p->nprocess, dba);
+#endif
      }
 #endif
      /* Rpi initialization */
@@ -599,24 +608,28 @@ int main (int argc, char **argv)
     if((fp = fopen(results_filename,  "a+"))==NULL){
 	printf("Program aborted : can't open results file : %s\n",results_filename);
  #ifdef SHAREDMEMORY
- 	if (shmdt(p) == -1)
-	    perror("shmdt : unable to detach shared memry");
-	else
-	    printf("Shared memroy deteched\n");
 	sem_wait(semaphore);
  	p->nprocess--;
  	p->tprocess[dba] = 0; 
- 	if(p->nprocess == 0){
-	    sem_post(semaphore);
-	    sem_close(semaphore);
-	    if (shmctl(mid, IPC_RMID, NULL) == -1)
-	    	perror("shmctl: unable to free shared memory");
-	}
+	i = p->nprocess;
+	sem_post(semaphore);
+	if (munmap(p, sizeof(struct procdesc)) == -1)
+	    perror("munmap : unable to unmap shared memory");
+#ifdef DEBUG
 	else
+	    printf("Unmapping shared memory befor exiting\n");
+#endif
+	/* if this process is the last one */
+ 	if(i == 0){
+#ifdef DEBUG
+	    printf("Last process aborted : removing semaphore and shared memory\n");
 #endif
 	    sem_unlink("/semaphore");
+	    if (shm_unlink(MEM_NAME) == -1)
+	    	perror("shm_unlink: unable to free shared memory");
+	}
+#endif
 	exit(1);
-	//goto endchadeche;
     }
 
     /* main measurement loop */
@@ -808,23 +821,27 @@ abort:
     discharge();
     /* clear shared memory */
 #ifdef SHAREDMEMORY
-    if (shmdt(p) == -1)
-	perror("shmdt : unable to detach shared memory");
-    else
-	printf("Shared memroy detached\n");
     sem_wait(semaphore);
     p->nprocess--;
     p->tprocess[dba] = 0; 
-    if(p->nprocess == 0){
-	sem_post(semaphore);
-	sem_close(semaphore);
-	if (shmctl(mid, IPC_RMID, NULL) == -1)
-	    perror("shmctl: unable to free shared memory");
-    }
+    i = p->nprocess;
+    sem_post(semaphore);
+    if (munmap(p, sizeof(struct procdesc)) == -1)
+	perror("munmap : unable to unmap shared memry");
+#ifdef DEBUG
     else
-	sem_post(semaphore);
+	printf("Unmapping shared memory befor exiting\n");
 #endif
-    sem_unlink("/semaphore");
+    /* if this process is the last one */
+    if(i == 0){
+#ifdef DEBUG
+	printf("Last process ending : removing semaphore and shared memory\n");
+#endif
+	if (shm_unlink(MEM_NAME) == -1)
+	    perror("shm_unlink: unable to free shared memory");
+    	sem_unlink("/semaphore");
+    }
+#endif
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
     return 0;
 }
