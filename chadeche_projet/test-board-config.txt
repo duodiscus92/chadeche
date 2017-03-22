@@ -1,9 +1,11 @@
 ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
 1	D	0	60	I	I	I	I	I	S	#Repos
-2	D	200	10000	S	I	I	I	I	S	#Decharge 200 mAh
-3	D	0	0	I	I	I	I	23:17	I	#Démarre les cycles charge-repos à 13:00
-4	D	0	60	I	I	I	I	I	S	#Repos
-5	C	300	300	I	A	I	7	I	S	#Charge 300 jusqu'a capacite max
+2	D	200	90000	S	I	S	I	I	S	#Decharge 200 mAh
+3	D	0	0	I	I	I	I	I	S	#NOP
+4	D	0	30	I	I	I	I	I	S	#Repos
+5	C	300	300	I	7	I	7	I	S	#Charge 300 jusqu'a capacite max
 6	C	0	5	I	I	I	I	4	S	#NOP et saut inconditionnel
 7	C	50	180	I	I	I	I	I	S	#Topoff
-8	C	10	120	I	I	I	I	I	I	#Maintient
+8	C	10	3600	I	I	I	I	I	I	#Maintient
+9	D	0	0	I	I	I	I	20:00	S	#Reveil à 20;00
+10	C	0	5	I	I	I	I	2	S	#NOP et saut inconditionnel

@@ -763,12 +763,12 @@ int main (int argc, char **argv)
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
-			/* battery voltage */voltage, /* current charge level*/fmAh/*+stepmAh*/, ctime(&t));
-            	    fprintf(fp, "%c;%02d;%02d;%1d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%s", 
+			/* battery voltage */voltage, /* current charge level*/fmAh, ctime(&t));
+            	    fprintf(fp, "%c;%02d;%02d;%1d;%4d;%6ld;%6ld;%6ld;%6d;%5.3f;%5.1f;%s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
-			/* battery voltage */voltage, ctime(&t));
+			/* battery voltage */voltage, /* current charge level*/fmAh, ctime(&t));
 	    	    fflush(fp);
         	}
 	    	else if(verbose_concise == CONCISE){
