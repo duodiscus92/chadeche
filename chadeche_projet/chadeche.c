@@ -21,13 +21,13 @@
 
 
 #define NB_BOARD 4	//max number of daugther board
+
 #define A0	0	//GPIO 17
-#define A1	2	//GPIO 27
-#define	CS0	4	//GPIO 23 CS0
-#define	CS1	5	//GPIO 24 CS1
+#define A1	2	//GPIO 27 
+#define	CS0	9	//GPIO 3 CS0
+#define	CS1	22	//GPIO 6 CS1
+#define	CS2	21	//GPIO 5 CS2
 #define	REL	7	//GPIO 4 commande relais
-#define REL_TEMPORARY	3	//GPIO 22 commande relais carte adresse 1 (temporaire pour cause erreur hardware)
-#define ENDLED  6	//GPIO 6 End of test (red led)
 
 #define CHARGE HIGH
 #define DISCHARGE LOW
@@ -158,37 +158,17 @@ void initchadeche(void)
     	pinMode (A1, OUTPUT) ;
     	pinMode (CS0, OUTPUT) ;
     	pinMode (CS1, OUTPUT) ;
-	pinMode (dba == 0 ? REL : REL_TEMPORARY, OUTPUT) ;
-    	pinMode (ENDLED, OUTPUT) ;
+    	pinMode (CS2, OUTPUT) ;
+	pinMode (REL, OUTPUT) ;
+    	//pinMode (ENDLED, OUTPUT) ;
 
     	digitalWrite (CS0, LOW) ; // deselect DAC
     	digitalWrite (CS1, LOW) ; // deselect CAN
-    	digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
+    	digitalWrite (CS2, LOW) ; // deselect LATCH
+    	digitalWrite (REL, DISCHARGE) ;  // discharge mode
      }
      wiringPiSPISetup(0, 100000); // init SPI interface
      sem_post(semaphore);
-}
-
-/* endled off */
-void endledoff(void)
-{
-    sem_wait(semaphore);
-    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
-    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    //delay(10); // attente stabilisation
-    digitalWrite (ENDLED, HIGH) ;
-    sem_post(semaphore);
-}
-
-/* endled on */
-void endledon(void)
-{
-    sem_wait(semaphore);
-    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
-    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    //delay(10); // attente stabilisation
-    digitalWrite (ENDLED, LOW) ;
-    sem_post(semaphore);
 }
 
 /* relay on charge position */
@@ -198,7 +178,10 @@ int charge(void)
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     //delay(5); // attente stabilisation
-    digitalWrite (dba == 0 ? REL : REL_TEMPORARY, CHARGE) ;  // charge mode
+    digitalWrite (REL, CHARGE) ;  // charge mode
+    digitalWrite (CS2, HIGH) ;  // select LATCH
+    delay(5);
+    digitalWrite (CS2, LOW) ;  // deselect LATCH
     sem_post(semaphore);
     return 1;
 }
@@ -210,13 +193,16 @@ int discharge(void)
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     //delay(5); // attente stabilisation
-    digitalWrite (dba == 0 ? REL : REL_TEMPORARY, DISCHARGE) ;  // discharge mode
+    digitalWrite (REL, DISCHARGE) ;  // discharge mode
+    digitalWrite (CS2, HIGH) ;  // select LATCH
+    delay(5);
+    digitalWrite (CS2, LOW) ;  // deselect LATCH
     sem_post(semaphore);
     return 0;
 }
 
 /* write avalue into the dac */
-void mcp4921write(unsigned int value)
+void mcp4922write(unsigned int value, unsigned int channel)
 {
     unsigned char tmp;
     union uval{
@@ -229,6 +215,7 @@ void mcp4921write(unsigned int value)
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
     //delay(2); // attente stabilisation
     val.i = value+4096+8192+16384;
+    if(channel == 1) val.i += 32768;
     tmp= val.buf[0];
     val.buf[0] = val.buf[1];
     val.buf[1] = tmp;
@@ -271,6 +258,24 @@ unsigned int mcp3201read()
    return filtered>>3;
 }
 
+/* led début essai */
+void begled(void)
+{
+    mcp4922write(4000, 1);
+}
+
+/* led essai en cours*/
+void ongoingled(void)
+{
+    mcp4922write(2000, 1);
+}
+
+/* led fin essai */
+void endled(void)
+{
+    mcp4922write(0, 1);
+}
+
 /* détection du pic de fin de charge */
 int deltapeak(int rawdata)
 {
@@ -291,6 +296,90 @@ int deltapeak(int rawdata)
 }
 
 /* param manager */
+int prmManager(void)
+{
+   FILE *fp;
+   int myargc=1, opt;
+   char buffer[80], *myargv[50];
+
+   if ((fp = fopen("chadeche.prm", "r")) == NULL){
+	printf("Impossible ouvrir fichier de paramètres\n");
+	return -1;
+    }
+    // par forcément utile mais je sais pas si getopt en a besoin
+    myargv[0] = malloc(strlen("chadeche")+1);
+    strcpy(myargv[0], "chadeche");
+
+    // on construit la liste des arguments pour getopt
+    fgets(buffer, 80, fp);
+    while (!feof(fp)) {
+	//printf(buffer);
+	myargv[myargc] = malloc(strlen(buffer)+1);
+	strncpy(myargv[myargc++], buffer, strlen(buffer)-1);
+      	fgets(buffer, 80, fp);
+    }
+    //printf("Nb parm = %d\n", myargc);
+    optind = 1; //indispensable
+    while ((opt = getopt(myargc, myargv, "a:c:C:i:n:f:g:o:p:v:m:M")) != -1) {	
+    switch(opt){
+	/* is it daughter board adress ?*/
+        case 'a':
+	    dba = atoi(optarg);
+	    break;
+	/* is it battery capacity min ?*/
+	case 'c':
+	    cmin = atoi(optarg);
+	    break;
+	/* is it battery capacity max ?*/
+	case 'C':
+	    cmax = atoi(optarg);
+	    break;
+	/* is it battery initial capacity ?*/
+	case 'i':
+	    cinit = atoi(optarg);
+	    break;
+	/* is it number of cycle ?*/
+	case 'n':
+	    ncycle = atoi(optarg);
+	    break;
+	/* is it filename ?*/
+	case 'f':
+	    strcpy(results_filename, optarg);
+	    break;
+	/* is it config filename ?*/
+	case 'g':
+	    strcpy(config_filename, optarg);
+	    break;
+	/* is it offset ? */
+	case 'o':
+	    offset = atof(optarg);
+	    break;
+	/* is it recordPeriod */
+	case 'p':
+	    recordPeriod = atoi(optarg);
+	    break;
+	/* is it verbose_concise */
+	case 'v':
+	    verbose_concise = VERBOSE;
+	    break;
+	/* is it offset vmin */
+	case 'm':
+	    vmin = atof(optarg);
+	    break;
+	/* is it offset vmaw */
+	case 'M':
+	    vmax= atof(optarg);
+	    break;
+	default :
+	    printf("prmManager : Unknown option or bad syntax\n");
+	    return -1;
+    }
+    }
+    return 0;
+}
+
+
+/* arg manager */
 void argManager(int argc, char **argv)
 {
     int opt;
@@ -307,7 +396,8 @@ void argManager(int argc, char **argv)
     -o : offset
     -h : help */
     //while(i>=1){
-    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:o:p:vm:M:h")) != -1) {	
+    optind = 1;
+    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:o:p:v:m:M:h")) != -1) {	
     switch(opt){
 	/* is it daughter board adress ?*/
         case 'a':
@@ -361,7 +451,7 @@ void argManager(int argc, char **argv)
 	case 'h':
 	    printf("Syntax: chadeche <option>\n");
 	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
-	    printf("\t-c initial battery capacity (mAh, def = %d)\n", CINIT);
+	    printf("\t-i initial battery capacity (mAh, def = %d)\n", CINIT);
 	    printf("\t-c battery capacity min (mAh, def = %d)\n", CMIN);
 	    printf("\t-C battery capacity max (mAh, def = %d)\n", CMAX);
 	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
@@ -375,7 +465,7 @@ void argManager(int argc, char **argv)
 	    printf("\t-h this help\n");
 	    exit(1);
 	default :
-	    printf("Unknown option or bad syntax\n");
+	    printf("argManagr: unknown option or bad syntax\n");
 	    exit(1);
     }
     }
@@ -435,7 +525,9 @@ int main (int argc, char **argv)
 
     int mid;
 
-    /* initialisation par défaut et gestion des arguments */
+    /* gestion du fichier de paramètres */
+    prmManager();
+    /* gestion des arguments */
     argManager(argc, argv);
 
     printf("Chadeche test parameters:\n");
@@ -604,11 +696,11 @@ int main (int argc, char **argv)
     initchadeche();
 
     /* end led (red) off */
-    endledoff();
+    begled();
 
     /* settintgs and pre-tests */
     printf("Setting current to zero and waiting 5 seconds ...\n");
-    mcp4921write(0);
+    mcp4922write(0,0);
     delay(5000);
 
     /* wait for battery presence before starting test */
@@ -662,6 +754,7 @@ int main (int argc, char **argv)
     time(&totaltime);
     /* cycle loop */
     fmAh=cinit; elapsedtime = 0;
+    ongoingled();
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
 	printf("Starting cycle nr.:%2d\n", repeat+1);
     	/* initializing time in second */
@@ -679,7 +772,7 @@ int main (int argc, char **argv)
 	    (cop=tconfig[step].cop) == 'D' ? discharge() : charge() ;
 	    /* set the current to the desired value */
 	    milliampScaled = tconfig[step].milliamp*10;
-	    mcp4921write(milliampScaled);
+	    mcp4922write(milliampScaled,0);
 
 	    j=0;
 	    /* data acquisition and logging loop */
@@ -801,7 +894,7 @@ mngdec:		switch(decision){
 				waketime = mktime(pt)-t;
 				if (waketime  < 0 ) waketime +=  24*3600;
 				printf("Will be awaked in %d seconds\n", waketime);
-				mcp4921write(0); /* set current to 0 before sleeping */
+				mcp4922write(0,0); /* set current to 0 before sleeping */
 				sleep(waketime);
 				goto nextstep; /* when awaked start next step */
 		    default :  	break;
@@ -850,20 +943,20 @@ abort:
 
 //endchadeche:
     printf("Setting the discharge current to zero\n");
-    mcp4921write(0);
+    mcp4922write(0,0);
     /* switching the end led (red) on */
     printf("Type Ctrl-C to quit definitively\n");
     stopflag = 0;
     while(stopflag == 0) {
 	//digitalWrite (ENDLED, LOW) ;
-	endledon();
+	endled();
 	delay(1000);
         //digitalWrite (ENDLED, HIGH) ;
-	endledoff();
+	begled();
 	delay(1000);
     }
     //digitalWrite (ENDLED, LOW) ;
-    endledon();
+    endled();
     discharge();
     /* clear shared memory */
 #ifdef SHAREDMEMORY
