@@ -5,15 +5,16 @@
 #include <wiringPi.h>
 
 #define A0	0	//GPIO 17
-#define A1	2	//GPIO 2 
-#define	CS0	4	//GPIO 23 CS0
-#define	CS1	5	//GPIO 24 CS1
+#define A1	2	//GPIO 27 
+#define	CS0	9	//GPIO 3 CS0
+#define	CS1	22	//GPIO 6 CS1
+#define	CS2	21	//GPIO 5 CS2
 #define	REL	7	//GPIO 4 commande relais
-#define ENDLED  6	//GPIO 6 End of test (red led)
 
 #define CHARGE HIGH
 #define DISCHARGE LOW
 
+int dba;
 
 /* chadeche initialisation */
 void initchadeche(void)
@@ -23,32 +24,31 @@ void initchadeche(void)
     pinMode (A1, OUTPUT) ;
     pinMode (CS0, OUTPUT) ;
     pinMode (CS1, OUTPUT) ;
+    pinMode (CS2, OUTPUT) ;
     pinMode (REL, OUTPUT) ;
-    pinMode (ENDLED, OUTPUT) ;
 
-    digitalWrite (A0, LOW) ;   // adresse A0=0
-    digitalWrite (A1, LOW) ;   // adresse A1=0
-    digitalWrite (CS0, HIGH) ; // deselect DAC
-    digitalWrite (CS1, HIGH) ; // deselect CAN
+    digitalWrite (A0, dba & 0x01) ;
+    digitalWrite (A1, dba & 0x02) ;
+    digitalWrite (CS0, LOW) ;
+    digitalWrite (CS1, LOW) ;
+    digitalWrite (CS2, LOW) ;
     digitalWrite (REL, DISCHARGE) ;  // discharge mode
-
-    //wiringPiSPISetup(0, 100000); // init SPI interface
 }
 
 // RELAY Pin - wiringPi pin 4 is BCM_GPIO 23.
 
-int main (void)
+int main (int argc, char **argv)
 {
+    dba = atoi(argv[1]);
 
     /* Rpi initialization */
     initchadeche();
 
-    /* end led (red) off */
-    digitalWrite (ENDLED, HIGH) ;
-
-    printf ("Position décharge\n") ;
-
-    digitalWrite (REL, DISCHARGE) ;
+    digitalWrite (REL, DISCHARGE) ;  // charge mode
+    digitalWrite (CS2, HIGH) ;  // select LATCH
+    delay(5);
+    digitalWrite (CS2, LOW) ;  // deselect LATCH
+    printf ("Position charge\n") ;
 
   return 0 ;
 }

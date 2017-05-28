@@ -33,7 +33,7 @@
 #define DISCHARGE LOW
 //#define MEM_KEY	3245617	// chared memory key for shmget()
 #define MEM_NAME "/sharedmem"
-typedef enum lang{FR, EN} LANGUAGE;
+typedef enum lang{FR=0, EN=1} LANGUAGE;
 
 /* default values */
 #define CINIT 0 /* mAh */
@@ -43,8 +43,10 @@ typedef enum lang{FR, EN} LANGUAGE;
 #define VMAX 1.75 /* Vcell max during charge */
 #define VMIN 1.0 /* Vcell min */
 #define OFFSET 0
+#define SLOPE 1
 #define RESULTS_FILENAME "chadeche-results.csv"
 #define CONFIG_FILENAME "chadeche-config.csv"
+#define PRM_FILENAME "chadecheX.prm"
 //#define RECORDTHRESHOLD 1	/* used only when record mode is RECORD_BY_VOLTAGE */
 #define CONCISE 0
 #define VERBOSE 1
@@ -53,7 +55,7 @@ typedef enum lang{FR, EN} LANGUAGE;
 #define DAUGHTER_BOARD_ADRESS 0
 
 /* parameters et valeurs par défaut */
-LANGUAGE language = EN;
+LANGUAGE language = FR;
 int	verbose_concise = CONCISE,
 	recordPeriod = RECORDPERIOD,
 	cmin = CMIN,
@@ -61,8 +63,10 @@ int	verbose_concise = CONCISE,
 	cinit = CINIT,
 	ncycle = NCYCLE,
 	dba = DAUGHTER_BOARD_ADRESS,
-	langage = FR;
-double 	offset = OFFSET,
+	langage = FR,
+	test = FALSE;
+double 	offset = OFFSET, slope = SLOPE,		// pente et offset tension
+        ioffset = OFFSET, islope = SLOPE, 	// pente et offset courant
 	vmax = VMAX,
 	vmin = VMIN;
 char 	results_filename[80]=RESULTS_FILENAME,
@@ -95,7 +99,7 @@ void readconf(char *filename)
 	char buffer[80];
 
 	if ((fp = fopen(filename, "r")) == NULL){
-	    printf("Program aborted : can't open config file %s\n", filename);
+	    printf(language == EN ? "Program aborted : can't open config file %s\n": "Programme abandonné : impossible ouvir fichier de configuration %s\n", filename);
 	    exit(1);
 	}
 
@@ -295,20 +299,36 @@ int deltapeak(int rawdata)
     return 0;
 }
 
+/* renvoie un pointeur sur le premier caractère rencontré différent de c */
+char *strnskip(char *s, char c)
+{
+    char *p = s;
+    while(*p)
+	if (*p != c)
+	   break;
+	else
+	    p++;
+    return p;
+}
+
 /* param manager */
 int prmManager(void)
 {
    FILE *fp;
    int myargc=1, opt;
-   char buffer[80], *myargv[50];
+   char buffer[80], *myargv[50], fname[20], *p;
 
-   if ((fp = fopen("chadeche.prm", "r")) == NULL){
-	printf("Impossible ouvrir fichier de paramètres\n");
+   strcpy(fname, PRM_FILENAME);
+   p = strchr(fname, 'X');
+   *p = dba+0x30;
+
+   if ((fp = fopen(fname, "r")) == NULL){
+	printf(language == EN ? "Unable to open parameter file %s\n" : "Impossible ouvrir fichier de paramètres %s\n", fname);
 	return -1;
     }
     // par forcément utile mais je sais pas si getopt en a besoin
-    myargv[0] = malloc(strlen("chadeche")+1);
-    strcpy(myargv[0], "chadeche");
+    myargv[0] = malloc(strlen(fname)+1);
+    strcpy(myargv[0], fname);
 
     // on construit la liste des arguments pour getopt
     fgets(buffer, 80, fp);
@@ -320,12 +340,8 @@ int prmManager(void)
     }
     //printf("Nb parm = %d\n", myargc);
     optind = 1; //indispensable
-    while ((opt = getopt(myargc, myargv, "a:c:C:i:n:f:g:o:p:v:m:M")) != -1) {	
+    while ((opt = getopt(myargc, myargv, "c:C:i:n:f:g:o:p:vm:M:s:l:1:2:")) != -1) {	
     switch(opt){
-	/* is it daughter board adress ?*/
-        case 'a':
-	    dba = atoi(optarg);
-	    break;
 	/* is it battery capacity min ?*/
 	case 'c':
 	    cmin = atoi(optarg);
@@ -344,19 +360,35 @@ int prmManager(void)
 	    break;
 	/* is it filename ?*/
 	case 'f':
-	    strcpy(results_filename, optarg);
+	    strcpy(results_filename, strnskip(optarg, ' '));
 	    break;
 	/* is it config filename ?*/
 	case 'g':
-	    strcpy(config_filename, optarg);
+	    strcpy(config_filename, strnskip(optarg, ' '));
 	    break;
-	/* is it offset ? */
+	/* is it offset voltage ? */
 	case 'o':
 	    offset = atof(optarg);
+	    break;
+	/* is it slope voltage ? */
+	case 's':
+	    slope = atof(optarg);
+	    break;
+	/* is it offset current? */
+	case '2':
+	    ioffset = atof(optarg);
+	    break;
+	/* is it slope current ? */
+	case '1':
+	    islope = atof(optarg);
 	    break;
 	/* is it recordPeriod */
 	case 'p':
 	    recordPeriod = atoi(optarg);
+	    break;
+	/* is it language seclection */
+	case 'l':
+	    language = (optarg[0] == 'E' ? EN : FR);
 	    break;
 	/* is it verbose_concise */
 	case 'v':
@@ -371,7 +403,7 @@ int prmManager(void)
 	    vmax= atof(optarg);
 	    break;
 	default :
-	    printf("prmManager : Unknown option or bad syntax\n");
+	    printf(language == EN ? "prmManager : Unknown option or bad syntax\n" : "prmManager : option inconnue ou erreur de syntaxe\n");
 	    return -1;
     }
     }
@@ -393,11 +425,10 @@ void argManager(int argc, char **argv)
     -n : # cycles
     -g : filename configuration
     -r : threshold for recording
-    -o : offset
     -h : help */
     //while(i>=1){
     optind = 1;
-    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:o:p:v:m:M:h")) != -1) {	
+    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:p:vm:M:l:h:t")) != -1) {	
     switch(opt){
 	/* is it daughter board adress ?*/
         case 'a':
@@ -439,6 +470,14 @@ void argManager(int argc, char **argv)
 	case 'v':
 	    verbose_concise = VERBOSE;
 	    break;
+	/* is it test and calibration mode */
+	case 't':
+	    test = TRUE;
+	    break;
+	/* is it language seclection */
+	case 'l':
+	    language = (optarg[0] == 'E' ? EN : FR);
+	    break;
 	/* is it offset vmin */
 	case 'm':
 	    vmin = atof(optarg);
@@ -449,23 +488,24 @@ void argManager(int argc, char **argv)
 	    break;
 	/* is it help */
 	case 'h':
-	    printf("Syntax: chadeche <option>\n");
-	    printf("\t-a daugther board adress (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
-	    printf("\t-i initial battery capacity (mAh, def = %d)\n", CINIT);
-	    printf("\t-c battery capacity min (mAh, def = %d)\n", CMIN);
-	    printf("\t-C battery capacity max (mAh, def = %d)\n", CMAX);
-	    printf("\t-n Repeat factor (def = %d)\n", NCYCLE);
-	    printf("\t-f results filename (def = %s)\n",RESULTS_FILENAME);
-	    printf("\t-g config filename (def = %s)\n", CONFIG_FILENAME);
-	    printf("\t-p record period (seconds, def = %d)\n", RECORDPERIOD);
-	    printf("\t-v activate VERBOSE mode\n");
-	    printf("\t-o offset (volts, def = %5.4f)\n", OFFSET);
-	    printf("\t-m vmin (default is %5.4f)\n", VMIN);
-	    printf("\t-M vmin (default is %5.4f)\n", VMAX);
-	    printf("\t-h this help\n");
+	    printf(language == EN ? "Syntax: chadeche <option>\n" :  "Syntaxe: chadeche <option>\n");
+	    printf(language == EN ? "\t-a daugther board adress (0-3, def = %d)\n": "\t-a adresse de la carte mère (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
+	    printf(language == EN ? "\t-i initial battery capacity (mAh, def = %d)\n" :  "\t-i charge initiale de la batterie (mAh, def = %d)\n", CINIT);
+	    printf(language == EN ? "\t-c battery capacity min (mAh, def = %d)\n" : "\t-c charge min de la batterie (mAh, def = %d)\n", CMIN);
+	    printf(language == EN ? "\t-C battery capacity max (mAh, def = %d)\n" : "\t-C charge mxn de la batterie (mAh, def = %d)\n", CMAX);
+	    printf(language == EN ? "\t-n Repeat factor (def = %d)\n" : "\t-n facteur de répétition (def = %d)\n", NCYCLE);
+	    printf(language == EN ? "\t-f results filename (def = %s)\n" : "\t-f nom du fichier de résultats (def = %s)\n",RESULTS_FILENAME);
+	    printf(language == EN ? "\t-g config filename (def = %s)\n" : "\t-g nom du fichier de configuration (def = %s)\n" , CONFIG_FILENAME);
+	    printf(language == EN ? "\t-p record period (seconds, def = %d)\n" :  "\t-p période d'enregistrement (secondes, def = %d)\n", RECORDPERIOD);
+	    printf(language == EN ? "\t-v activate VERBOSE mode\n" :  "\t-v mode verbeux\n");
+	    printf(language == EN ? "\t-t activate TEST mode\n" :  "\t-t mode TEST activé\n");
+	    //printf("\t-o offset (volts, def = %5.4f)\n", OFFSET);
+	    printf(language == EN ? "\t-m Vmin (default is %5.4f)\n" : "\t-m Vmin (def =  %5.4f)\n", VMIN);
+	    printf(language == EN ? "\t-M vmin (default is %5.4f)\n" : "\t-M Vmax (def =  %5.4f)\n", VMAX);
+	    printf(language == EN ? "\t-h this help\n" : "\t-h cette aide\n");
 	    exit(1);
 	default :
-	    printf("argManagr: unknown option or bad syntax\n");
+	    printf(language == EN ? "argManager : Unknown option or bad syntax\n" : "prmManager : option inconnue ou erreur de syntaxe\n");
 	    exit(1);
     }
     }
@@ -512,45 +552,52 @@ int main (int argc, char **argv)
 	CONTROLZ_DETECT} decisioncause = NO_CAUSE;
 
     /* message to explain end fo step cause */
-    char *msgcause[]= {
-	"Normal step starting",
-	"Unconditional jump or sleeping process awaked",
-	"Battery voltage overflow on open cicuit", 
-	"Battery voltage < low threshold",
-	"Battery voltage > high threshold",
-	"Battery capacity underflow",
-	"Battery capacity overflow",
-	"Contrl-Z"
+    char *msgcause[][2]= {
+	"Début normal de séquence","Normal step starting",
+	"Saut inconditionnel ou reveil d'une séquence endormie", "Unconditional jump or sleeping process awaked",
+	"Dépassement de tension ou circuit accu non déconnecté", "Battery voltage overflow on open cicuit", 
+	"Tension de l'accu < au seuil bas", "Battery voltage < low threshold",
+	"Tension de l'accu > au seuil haut", "Battery voltage > high threshold",
+	"Charge de l'accu < au seuil bas", "Battery capacity underflow",
+	"Charge de l'accu > au seuil haut", "Battery capacity overflow",
+	"Control-Z", "Contrl-Z",
     };
 
     int mid;
 
+    /* gestion des arguments uniquement pour avoir le n° de la carte*/
+    argManager(argc, argv);
     /* gestion du fichier de paramètres */
     prmManager();
-    /* gestion des arguments */
+    /* gestion des arguments cette fois-ci c'est pour tous les paramètres*/
     argManager(argc, argv);
 
-    printf("Chadeche test parameters:\n");
-    printf("\tDaugther board adress : %d\n", dba);
-    printf("\tInitial battery capacity : %d\n", cinit); 
-    printf("\tBattery capacity min: %d\n", cmin); 
-    printf("\tBattery capacity max : %d\n", cmax); 
-    printf("\tResults filename : %s\n", results_filename);
-    printf("\tConfig filename : %s\n", config_filename);
-    printf("\tRepeat factor: %d\n", ncycle); 
-    printf("\tOffset : %5.4f\n", offset);
-    printf("\tVmin threshold : %5.4f\n", vmin);
-    printf("\tVmax threshold : %5.4f\n", vmax);
-    printf("\tRecord period in seconds: %4d\n", recordPeriod);
-    printf("\tMode :  ");
-	 verbose_concise == CONCISE ? printf("CONCISE\n") : printf("VERBOSE\n");
+    printf(language == EN ? "Chadeche parameters:\n" : "Paramètres de Chadeche:\n");
+    printf(language == EN ? "\tDaugther board adress : %d\n" : "\tAdresse de la carte Chadeche : %d\n", dba);
+    printf(language == EN ? "\tInitial battery capacity : %d\n" : "\tCharge initiale de l'accu : %d\n", cinit); 
+    printf(language == EN ? "\tBattery capacity min: %d\n" : "\tCharge min de l'accu : %d\n" , cmin); 
+    printf(language == EN ? "\tBattery capacity max : %d\n" : "\tCharge max de l'accu : %d\n" , cmax); 
+    printf(language == EN ? "\tResults filename : %s\n" : "\tNom du fichier de résultats : %s\n", results_filename);
+    printf(language == EN ? "\tConfig filename : %s\n" : "\tNom du fichier de configuration : %s\n", config_filename);
+    printf(language == EN ? "\tCycle repeat factor: %d\n" : "\tFacteur de répétiion de cycles : %d\n", ncycle); 
+    printf(language == EN ? "\tOffset voltage : %5.4f\n" : "\tOffset en tension : %5.4f\n", offset);
+    printf(language == EN ? "\tSlope voltage : %5.4f\n" : "\tPente en tension : %5.4f\n", slope);
+    printf(language == EN ? "\tOffset current : %5.4f\n" : "\tOffset en courant : %5.4f\n", ioffset);
+    printf(language == EN ? "\tSlope current : %5.4f\n" : "\tPente en courant : %5.4f\n", islope);
+    printf(language == EN ? "\tVmin threshold : %5.4f\n" : "\tTension de seuil Vmin : %5.4f\n", vmin);
+    printf(language == EN ? "\tVmax threshold : %5.4f\n" : "\tTension de seuil Vmax : %5.4f\n", vmax);
+    printf(language == EN ? "\tRecord period in seconds: %4d\n" : "\tPériode d'enregistrement en secondes : %4d\n", recordPeriod);
+    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
+	 verbose_concise == CONCISE ? printf(language == EN ? "CONCISE\n" : "DISCRET\n") : printf(language == EN ? "VERBOSE\n" : "BAVARD\n");
+    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
+	 test == TRUE ? printf(language == EN ? "TEST ON\n" : "TEST activé\n") : printf(language == EN ? "TEST OFF\n" : "TEST désactivé\n");
 
 
     /* lecture et mémorisation fichier de config */
     readconf(config_filename);
     /* presentation de l'essai */
     i = elapsedtime = 0;
-    printf("Battery test sequence will be as follow ...\n");
+    printf(language == EN ? "Sequences will be as follow ...\n" : "Les séquences se dérouleront comme suit ...\n");
     printf("STEP\t|\tADR\tCOP\tmA\tS\tL\tH\tLmAh\tHmAh\tTRUE\tCtrlZ\tComment\n");
     //while(tconfig[i].cop != 0){
     for(i = 0, mAh = cinit; tconfig[i].cop != 0; i++){
@@ -699,24 +746,32 @@ int main (int argc, char **argv)
     begled();
 
     /* settintgs and pre-tests */
-    printf("Setting current to zero and waiting 5 seconds ...\n");
+    printf(language == EN ? "Setting current to zero and waiting 5 seconds ...\n" : "Courant à zéro et attente de 5 secondes ...\n");
     mcp4922write(0,0);
     delay(5000);
 
     /* wait for battery presence before starting test */
-    if((currentData=mcp3201read()) == 0 ){
-	printf("Waiting for battery presence\n");
-	do {
-	    printf("."); fflush(stdout);
-	    delay(1000);
-	} while ((currentData = mcp3201read()) == 0);
-	printf("\nBattery presence detected. Test will start in 5 seconds ...\n");
+    if(test == FALSE){
+	if((currentData=mcp3201read()) == 0 ){
+	   printf(language == EN ? "Waiting for battery presence\n" : "Attente présence accu\n");
+	   do {
+	      printf("."); fflush(stdout);
+	       delay(1000);
+	   } while ((currentData = mcp3201read()) == 0);
+	   printf(language == EN ? "\nBattery presence detected. Test will start in 5 seconds ...\n" : "Présence de l'accu détectée. L'essai commence dans 5 secondes ... \n");
+	   delay(5000);
+	}
+    }
+    else{
+	currentData=mcp3201read();
+	printf(language == EN ? "\nTest will start in 5 seconds ...\n" : "L'essai commence dans 5 secondes ... \n");
 	delay(5000);
     }
 
+
     /* verify that Vcell don't exceed Vmax_open */
     //if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
-    if((voltage = (double)currentData/1000 + offset) >= VMAX_OPEN){
+    if((voltage = slope*(double)currentData/1000 + offset) >= VMAX_OPEN){
 	decisioncause = VMAXOPEN_DETECT;
 	goto abort;
     }
@@ -756,7 +811,7 @@ int main (int argc, char **argv)
     fmAh=cinit; elapsedtime = 0;
     ongoingled();
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
-	printf("Starting cycle nr.:%2d\n", repeat+1);
+	printf(language == EN ? "Starting cycle nr.:%2d\n" :  "Lancement cycle nr.:%2d\n", repeat+1);
     	/* initializing time in second */
     	time(&cycletime);
 	step = 0; /*stepmAh=0*/;
@@ -767,7 +822,7 @@ int main (int argc, char **argv)
 	    time(&steptime);
 	    t = steptime;
 	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
-	    printf("Starting step nr.%2d (%s): %s", step+1,  msgcause[decisioncause], tconfig[step].comment);
+	    printf(language == EN ? "Starting step nr.%2d (%s): %s" : "Lancement séquence nr.%2d (%s): %s", step+1,  msgcause[decisioncause][language], tconfig[step].comment);
 	    /* set the relay for the current mode */
 	    (cop=tconfig[step].cop) == 'D' ? discharge() : charge() ;
 	    /* set the current to the desired value */
@@ -779,7 +834,7 @@ int main (int argc, char **argv)
 	    while( (t-steptime) <= tconfig[step].duration ){
 		/* read battery voltage */
       		currentData = mcp3201read();
-	        voltage = (double)currentData/1000 + offset;
+	        voltage = slope*(double)currentData/1000 + offset;
 	        //voltage = (double)currentData*0.9758*5.1/4096 + offset;
                 //voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
@@ -852,7 +907,7 @@ int main (int argc, char **argv)
 		//if((verbose_concise == VERBOSE) && !((t-cycletime) % 10) ){
 		dt = verbose_concise == VERBOSE ? 10 : recordPeriod; 
 		if(!((t-cycletime) % dt) ){
-            	    printf("%c/%02d/%02d dba=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f mAh=%5.1f, %s", 
+            	    printf("%c/%02d/%02d DBA=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f mAh=%5.1f %s", 
 			/* code operation */cop,/* nr cycle */  repeat+1, /* nr step */step+1, /*daugher baord adress */dba, 
 			/* consigne courant */tconfig[step].milliamp,
 			/* CET */t-cycletime, /* SET */t-steptime , /* TET*/ t-totaltime,  /* STA */tconfig[step].duration-t+steptime,
@@ -890,10 +945,10 @@ mngdec:		switch(decision){
 				sscanf(str, "%d:%d", &(pt->tm_hour), &(pt->tm_min));
 				pt->tm_sec = 0;
 				pt->tm_isdst = 0; /*  don't use daytime saving  */
-				printf("Sleeping until %d:%02d\n", pt->tm_hour, pt->tm_min);
+				printf(language == EN ? "Sleeping until %d:%02d\n" : "Séquence en sommeil jusqu'à %d:%02d\n", pt->tm_hour, pt->tm_min);
 				waketime = mktime(pt)-t;
 				if (waketime  < 0 ) waketime +=  24*3600;
-				printf("Will be awaked in %d seconds\n", waketime);
+				printf(language == EN ? "Will be awaked in %d seconds\n" : "Sera reveillé dans %d secondes\n", waketime);
 				mcp4922write(0,0); /* set current to 0 before sleeping */
 				sleep(waketime);
 				goto nextstep; /* when awaked start next step */
@@ -908,7 +963,8 @@ abort:
     fclose(fp);
 
     if (peakdetected)
-    	printf ("\nBattery test ends because battery peak detected with voltage = %5.3f\n", voltage);
+    	printf (language == EN ? "\nBattery test ends because battery peak detected with voltage = %5.3f\n" :  \
+				 "\nFin d'essai car un pic de tension a été détecté = %5.3f volts\n", voltage);
     else if (stopflag==1)
     	printf ("\nBattery test ends due to Ctrl-C occurence. Battery voltage is = %5.3f\n", voltage);
     /* testing why the test ends */
@@ -942,10 +998,10 @@ abort:
     }
 
 //endchadeche:
-    printf("Setting the discharge current to zero\n");
+    printf(language == EN ? "Setting the discharge current to zero\n" : "Remise à zéro du courant de charge ou décharge\n");
     mcp4922write(0,0);
     /* switching the end led (red) on */
-    printf("Type Ctrl-C to quit definitively\n");
+    printf(language == EN ? "Type Ctrl-C to quit definitively\n" : "Tapez Ctrl-C pour quitter définitvement\n");
     stopflag = 0;
     while(stopflag == 0) {
 	//digitalWrite (ENDLED, LOW) ;
