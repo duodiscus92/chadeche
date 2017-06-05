@@ -1,0 +1,9 @@
+ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
+1	C	0	60	I	I	I	I	I	S	#Repos
+2	C	50	60	I	I	I	I	I	S	#charge 50 mA
+3	C	100	60	I	I	I	I	I	S	#charge 100 mA
+4	C	150	60	I	I	I	I	I	S	#charge 150 mA
+5	C	200	60	I	I	I	I	I	S	#charge 200 mA
+6	C	250	60	I	I	I	I	I	S	#charge 250 mA
+7	C	300	60	I	I	I	I	I	S	#charge 300 mA
+8	C	350	60	I	I	I	I	I	S	#charge 350 mA

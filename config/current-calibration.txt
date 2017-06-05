@@ -1,0 +1,13 @@
+ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
+1	D	0	30	I	I	I	I	I	S	#Repos
+2	D	50	30	I	I	I	I	I	S	#décharge 50 mA
+3	D	100	30	I	I	I	I	I	S	#décharge 100 mA
+4	D	150	30	I	I	I	I	I	S	#décharge 150 mA
+5	D	200	30	I	I	I	I	I	S	#décharge 200 mA
+6	D	250	30	I	I	I	I	I	S	#décharge 250 mA
+7	C	0	30	I	I	I	I	I	S	#Repos
+8	C	50	30	I	I	I	I	I	S	#charge 50 mA
+9	C	100	30	I	I	I	I	I	S	#charge 100 mA
+10	C	150	30	I	I	I	I	I	S	#charge 1500 mA
+11	C	200	30	I	I	I	I	I	S	#charge 200 mA
+12	C	250	30	I	I	I	I	I	S	#charge 250 mA

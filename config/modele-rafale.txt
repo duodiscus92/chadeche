@@ -1,0 +1,8 @@
+ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
+1	D	0	60	I	I	I	I	I	S	#Repos
+2	D	200	90000	S	I	S	I	I	S	#Decharge 200 mAh
+3	D	0	60	I	I	I	I	I	S	#Repos
+4	C	300	300	I	6	I	6	I	S	#Charge 300 jusqu'a capacite max
+5	C	0	5	I	I	I	I	3	S	#NOP et saut inconditionnel
+6	C	50	300	I	I	I	I	I	S	#Topoff
+7	C	10	3600	I	I	I	I	I	I	#Maintient
