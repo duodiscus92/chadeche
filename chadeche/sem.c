@@ -32,6 +32,11 @@ int initsem(void)
 /* destruction du sempahore */
 void termsem(void)
 {
+    int i;
+
+    sem_wait(semaphore);
+    i = p->nprocess;
+    sem_post(semaphore);
     sem_unlink("/semaphore");
 }
 
