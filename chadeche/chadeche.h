@@ -110,9 +110,10 @@ extern void endled(void);
 extern int deltapeak(int rawdata);
 
 /* interface de sem.c */
-extern int initmem(void);
 extern int initsem(void);
 extern void termsem(void);
-extern void termmem(void);
+extern int initmem(void);
+extern int termmem(void);
 extern int  subscribe(int dba);
 extern int  unsubscribe(int dba);
+

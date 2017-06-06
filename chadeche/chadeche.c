@@ -131,11 +131,15 @@ int main(int argc, char **argv)
 	perror("sigaction");
 	exit(1);
     }
-#undef  SEMMODULE
+#define  SEMMODULE
 #ifdef SEMMODULE /* il y existe un module sem.c qui fonctionne */
     if (initmem() == -1) exit(1);
     if (initsem() == -1) exit(1);
-    if (subscribe(dba) == -1) exit(1);
+    if (subscribe(dba) == -1){
+	termsem();
+	termmem();
+	exit(1);
+    }
 #else /* pas de module sem.c ou bien le module ne fonctionne pas */
 #ifdef SHAREDMEMORY
     /* shared memory creation */
@@ -258,8 +262,10 @@ int main(int argc, char **argv)
     if((fp = fopen(results_filename,  "a+"))==NULL){
 	printf("Program aborted : can't open results file : %s\n",results_filename);
 #ifdef SEMMODULE
-	unsubscribe(dba);
-	termmem();
+	if(unsubscribe(dba)== 0){
+	    termsem();
+	    termmem();
+	}
 #else
 #ifdef SHAREDMEMORY
 	sem_wait(semaphore);
@@ -507,8 +513,10 @@ abort:
     discharge();
     /* clear shared memory */
 #ifdef SEMMODULE
-    unsubscribe(dba);
-    termmem();
+    if(unsubscribe(dba) == 0){
+	termsem();
+    	termmem();
+    }
 #else
 #ifdef SHAREDMEMORY
     sem_wait(semaphore);

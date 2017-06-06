@@ -1,8 +1,8 @@
-#chadeche: chadeche.o config.o param.o hw.o sem.o
-#	gcc -o chadeche chadeche.o config.o param.o hw.o sem.o -lpthread -lwiringPi -lrt
+chadeche: chadeche.o config.o param.o hw.o sem.o
+	gcc -o chadeche chadeche.o config.o param.o hw.o sem.o -lpthread -lwiringPi -lrt
 
-chadeche: chadeche.o config.o param.o hw.o
-	gcc -o chadeche chadeche.o config.o param.o hw.o  -lpthread -lwiringPi -lrt
+#chadeche: chadeche.o config.o param.o hw.o
+#	gcc -o chadeche chadeche.o config.o param.o hw.o  -lpthread -lwiringPi -lrt
 
 chadeche.o: chadeche.c chadeche.h
 	gcc -c -o chadeche.o chadeche.c -DSHAREDMEMORY

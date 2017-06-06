@@ -17,6 +17,10 @@ int initsem(void)
 	semaphore = sem_open("/semaphore", O_RDWR);
 	if (semaphore == SEM_FAILED) {
 	    perror("/semaphore : Unable to open existing semaphore\n");
+#ifdef SHAREDMEMORY
+    	    if (munmap(p, sizeof(struct procdesc)) == -1)
+	    	perror("munmap : unable to unmap shared memry");
+#endif
 	    return -1;
 	 }
      }
@@ -75,16 +79,18 @@ int initmem(void)
 }
 
 /* destruction mémoire partagée */
-int termmem(void)
+void termmem(void)
 {
 
    int i;
 #ifdef SHAREDMEMORY
     sem_wait(semaphore);
+    p->nprocess--;
+    p->tprocess[dba] = 0; 
     i = p->nprocess;
     sem_post(semaphore);
     if (munmap(p, sizeof(struct procdesc)) == -1)
-	perror("munmap : unable to unmap shared memory");
+	perror("munmap : unable to unmap shared memry");
 #ifdef DEBUG
     else
 	printf("Unmapping shared memory befor exiting\n");
@@ -92,14 +98,14 @@ int termmem(void)
     /* if this process is the last one */
     if(i == 0){
 #ifdef DEBUG
-	printf("Last process ending : removing shared memory\n");
+	printf("Last process ending : removing semaphore and shared memory\n");
 #endif
 	if (shm_unlink(MEM_NAME) == -1)
 	    perror("shm_unlink: unable to free shared memory");
     	//sem_unlink("/semaphore");
+	termsem();
     }
 #endif
-    return i;
 }
 
 /* enregistrer un process chadeche */
@@ -113,10 +119,16 @@ int subscribe(int dba)
 	sem_post(semaphore);
 	printf(language == EN ? "Program aborted !!! A process nr. %d is already using this board nr. %d\n" : \
 				"Progamme abandonné !!! Un processus n° %d utilise déjà cetee carte n° %d\n", p->tprocess[dba], dba);
+    	if (munmap(p, sizeof(struct procdesc)) == -1)
+	    perror("munmap : unable to unmap shared memry");
+#ifdef DEBUG
+	else
+	    printf("Unmapping shared memory before exiting\n");
+#endif
 	return -1;
      }
      else {
-     	p->nprocess++;
+     	i = p->nprocess++;
      	p->tprocess[dba] = p->nprocess; 
      	sem_post(semaphore);
      }
@@ -124,19 +136,34 @@ int subscribe(int dba)
 	printf("Process nr. %d launched : Using the board %d\n", p->nprocess, dba);
 #endif
 #endif
-    return p->nprocess;;
+    return i;
 }
 
 /* desenregistrer un process chadeche */
 int unsubscribe(int dba)
 {
-   int i;
+   int i = -1;
 #ifdef SHAREDMEMORY
     sem_wait(semaphore);
     p->nprocess--;
     p->tprocess[dba] = 0; 
     i = p->nprocess;
     sem_post(semaphore);
+    if (munmap(p, sizeof(struct procdesc)) == -1)
+	perror("munmap : unable to unmap shared memry");
+#ifdef DEBUG
+    else
+	printf("Unmapping shared memory befor exiting\n");
+#endif
+    /* if this process is the last one */
+    if(i == 0){
+#ifdef DEBUG
+	printf("Last process ending : removing semaphore and shared memory\n");
+#endif
+	if (shm_unlink(MEM_NAME) == -1)
+	    perror("shm_unlink: unable to free shared memory");
+    	sem_unlink("/semaphore");
+    }
 #endif
    return i;
 }
