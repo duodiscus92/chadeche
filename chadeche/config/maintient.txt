@@ -1,0 +1,5 @@
+ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
+1	D	0	600	I	I	I	I	I	S	#Repos
+2	D	50	3600	S	I	S	I	I	S	#décharge lente 1 heure
+3	C	0	600	I	I	I	I	I	S	#Repos
+4	C	50	3600	I	S	I	S	I	S	#charge lente 1 heure

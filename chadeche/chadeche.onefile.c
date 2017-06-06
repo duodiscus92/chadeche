@@ -4,9 +4,56 @@
 		http://wiringpi.com
  */
 
-#include "chadeche.h"
+#include <stdio.h>
+#include <wiringPi.h>
+#include <wiringPiSPI.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+#include <signal.h>
+#include <semaphore.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/shm.h>
+//#include <sys/ipc.h>
+#include <sys/mman.h>
 
 
+#define NB_BOARD 4	//max number of daugther board
+
+#define A0	0	//GPIO 17
+#define A1	2	//GPIO 27 
+#define	CS0	9	//GPIO 3 CS0
+#define	CS1	22	//GPIO 6 CS1
+#define	CS2	21	//GPIO 5 CS2
+#define	REL	7	//GPIO 4 commande relais
+
+#define CHARGE HIGH
+#define DISCHARGE LOW
+//#define MEM_KEY	3245617	// chared memory key for shmget()
+#define MEM_NAME "/sharedmem"
+typedef enum lang{FR=0, EN=1} LANGUAGE;
+
+/* default values */
+#define CINIT 0 	/* mAh */
+#define CMIN 100 	/* mAh */
+#define CMAX 1300 	/* mAh */
+#define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
+#define VMAX 1.75 	/* Vcell max during charge */
+#define VMIN 1.0 	/* Vcell min */
+#define OFFSET 0	/* Voltage and current offset */
+#define SLOPE 1		/* voltage and current slope */
+#define RESULTS_FILENAME "chadeche-results.csv"
+#define CONFIG_FILENAME "chadeche-config.csv"
+#define PRM_FILENAME "chadecheX.prm" /* X will be replaced by daugther board adress 0, 1, 2, 3 */
+//#define RECORDTHRESHOLD 1	/* used only when record mode is RECORD_BY_VOLTAGE */
+#define CONCISE 0
+#define VERBOSE 1
+#define RECORDPERIOD 120 	/* used only when record mode is RECORD_BY_TIME */
+#define NCYCLE 1
+#define DAUGHTER_BOARD_ADRESS 0
+#define MAX_STEP 500 		/* Max number of step in a configfile */
 
 /* parameters et valeurs par défaut */
 LANGUAGE language = FR;
@@ -26,16 +73,68 @@ double 	offset = OFFSET, slope = SLOPE,		// pente et offset tension
 char 	results_filename[80]=RESULTS_FILENAME,
 	config_filename[80]=CONFIG_FILENAME;
 
+/* semaphore for exclusive access to Rpi */
+static sem_t *semaphore = NULL;
+
+
+typedef struct config {
+	int adr;
+	char cop;
+	int  milliamp;
+	int duration;
+	char toolow[6];
+	char toohigh[6];
+	char toolowcapacity[6];
+	char toohighcapacity[6];
+	char always[6];
+	char controlflag[6];
+	char comment[80];
+} CONFIG;
+
+CONFIG tconfig[MAX_STEP];
+/* read the config file and store values into tconfig */
+void readconf(char *filename)
+{
+	FILE *fp;
+	int i = 0;
+	char buffer[80];
+
+	if ((fp = fopen(filename, "r")) == NULL){
+	    printf(language == EN ? "Program aborted : can't open config file %s\n" : \
+				    "Programme abandonné : impossible ouvir fichier de configuration %s\n", filename);
+	    exit(1);
+	}
+
+	/* first line always ignored */
+	fgets(buffer, 80, fp);
+	while (!feof(fp)) {
+	    fgets(buffer, 80, fp);
+	    //sscanf(buffer, "%d;%c;%d;%d;%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-];%[A-Z0-9\\-]\n",
+	    sscanf(buffer, "%d\t%c\t%d\t%d\t%[A-Z0-9\\-\\:]\t%[A-Z0-9\\-\\:]\t%[A-Z0-9\\-\\:]\t%[A-Z0-9\\-\\:]\t%[A-Z0-9\\-\\:]\t%[A-Z0-9\\-\\:]\n",
+		&(tconfig[i].adr),
+		&(tconfig[i].cop),
+		&(tconfig[i].milliamp),
+		&(tconfig[i].duration),
+		tconfig[i].toolow,
+		tconfig[i].toohigh,
+		tconfig[i].toolowcapacity,
+		tconfig[i].toohighcapacity,
+		tconfig[i].always,
+		tconfig[i].controlflag);
+	    strcpy(tconfig[i].comment, strchr(buffer, '#')+1);
+	    if (i++ > MAX_STEP){
+		printf(language == EN ? "Program aborted : too much step in a configuation file. Must not exceed %d\n" : \
+					"Programme abandonné : trop de séquence dans un fichier de configuration. Ne peut  pas dépasser %d\n", MAX_STEP);
+		exit(1);
+	    }
+	}
+	tconfig[i-1].cop = 0; // pour marquer le fin de config
+}
 
 int min(int a, int b)
 {
 	return (a < b ? a : b);
 }
-
-
-/* semaphore for exclusive access to Rpi */
-sem_t *semaphore = NULL;
-
 
 volatile int stopflag=0;
 /* Ctrl-C interrupt handler */
@@ -55,6 +154,367 @@ void CtrlZHandler(int sig, siginfo_t *siginfo, void * context)
     controlflag=1;
 }
 
+
+/* chadeche hardware initialisation */
+int firstcall = 1;
+void initchadeche(void)
+{
+    sem_wait(semaphore);
+    wiringPiSetup () ;
+    /* only the first process called can initialize RPi hardware */
+    if(firstcall == 1){
+    	pinMode (A0, OUTPUT) ;
+    	pinMode (A1, OUTPUT) ;
+    	pinMode (CS0, OUTPUT) ;
+    	pinMode (CS1, OUTPUT) ;
+    	pinMode (CS2, OUTPUT) ;
+	pinMode (REL, OUTPUT) ;
+    	//pinMode (ENDLED, OUTPUT) ;
+
+    	digitalWrite (CS0, LOW) ; 	// deselect DAC
+    	digitalWrite (CS1, LOW) ; 	// deselect CAN
+    	digitalWrite (CS2, LOW) ; 	// deselect LATCH
+    	digitalWrite (REL, DISCHARGE) ; // discharge mode
+     }
+     wiringPiSPISetup(0, 100000); 	// init SPI interface
+     sem_post(semaphore);
+}
+
+/* relay on charge position */
+int charge(void)
+{
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   	// adresse A0=0
+    digitalWrite (A1, dba&0x02) ;	// adresse A1=0
+    //delay(5); // attente stabilisation
+    digitalWrite (REL, CHARGE) ;  	// charge mode
+    digitalWrite (CS2, HIGH) ;  	// select LATCH
+    delay(5);
+    digitalWrite (CS2, LOW) ;  		// deselect LATCH
+    sem_post(semaphore);
+    return 1;
+}
+
+/* relay on discharge position */
+int discharge(void)
+{
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   	// adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   	// adresse A1=0
+    //delay(5); // attente stabilisation
+    digitalWrite (REL, DISCHARGE) ;  	// discharge mode
+    digitalWrite (CS2, HIGH) ;  	// select LATCH
+    delay(5);
+    digitalWrite (CS2, LOW) ;  		// deselect LATCH
+    sem_post(semaphore);
+    return 0;
+}
+
+/* write avalue into the dac */
+void mcp4922write(unsigned int value, unsigned int channel)
+{
+    unsigned char tmp;
+    union uval{
+        unsigned short int i;
+	unsigned char buf[2];
+    }val;
+
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   	// adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   	// adresse A1=0
+    //delay(2); // attente stabilisation
+    val.i = value+4096+8192+16384;
+    if(channel == 1) val.i += 32768;
+    tmp= val.buf[0];
+    val.buf[0] = val.buf[1];
+    val.buf[1] = tmp;
+    digitalWrite (CS0, HIGH) ;
+    wiringPiSPIDataRW(0, val.buf, 2);
+    digitalWrite (CS0, LOW) ;
+    sem_post(semaphore);
+}
+
+
+/* read mcp3201 using SPI */
+unsigned int mcp3201read()
+{
+    unsigned char tmp;
+    union uval{
+        unsigned short int i;
+	unsigned char buf[2];
+    }val;
+
+    unsigned int filtered;
+    int i;
+
+    sem_wait(semaphore);
+    digitalWrite (A0, dba&0x01) ;   // adresse A0=0
+    digitalWrite (A1, dba&0x02) ;   // adresse A1=0
+    //delay(2); // attente stabilisation
+    for(i=0, filtered=0 ;i<8; i++){
+        digitalWrite (CS1, HIGH) ;
+	wiringPiSPIDataRW(0, val.buf, 2);
+	digitalWrite (CS1, LOW) ;
+	tmp= val.buf[0];
+	val.buf[0] = val.buf[1];
+	val.buf[1] = tmp;
+	val.i >>=1;
+	val.i &= 0xfff;
+	filtered += val.i;
+	delay(5);
+   }
+   sem_post(semaphore);
+   return filtered>>3;
+}
+
+/* led début essai */
+void begled(void)
+{
+    mcp4922write(4000, 1);
+}
+
+/* led essai en cours*/
+void ongoingled(void)
+{
+    mcp4922write(2000, 1);
+}
+
+/* led fin essai */
+void endled(void)
+{
+    mcp4922write(0, 1);
+}
+
+/* détection du pic de fin de charge */
+int deltapeak(int rawdata)
+{
+    static int derivative = 0, previous = 0, delta;
+
+    delta = rawdata - previous;
+    if(delta > 0){
+	derivative++;
+	if (derivative > 8) derivative = 8;
+    }
+    else if(delta  < 0) {
+	derivative--;
+	if (derivative  < -8)
+	return 1;
+    }
+    previous = rawdata;
+    return 0;
+}
+
+/* renvoie un pointeur sur le premier caractère rencontré différent de c */
+char *strnskip(char *s, char c)
+{
+    char *p = s;
+    while(*p)
+	if (*p != c)
+	   break;
+	else
+	    p++;
+    return p;
+}
+
+/* param manager */
+int prmManager(void)
+{
+   FILE *fp;
+   int myargc=1, opt;
+   char buffer[80], *myargv[50], fname[20], *p;
+
+   strcpy(fname, PRM_FILENAME);
+   p = strchr(fname, 'X');
+   *p = dba+0x30;
+
+   if ((fp = fopen(fname, "r")) == NULL){
+	printf(language == EN ? "Unable to open parameter file %s\n" : "Impossible ouvrir fichier de paramètres %s\n", fname);
+	return -1;
+    }
+    // par forcément utile mais je sais pas si getopt en a besoin
+    myargv[0] = malloc(strlen(fname)+1);
+    strcpy(myargv[0], fname);
+
+    // on construit la liste des arguments pour getopt
+    fgets(buffer, 80, fp);
+    while (!feof(fp)) {
+	//printf(buffer);
+	myargv[myargc] = malloc(strlen(buffer)+1);
+	strncpy(myargv[myargc++], buffer, strlen(buffer)-1);
+      	fgets(buffer, 80, fp);
+    }
+    //printf("Nb parm = %d\n", myargc);
+    optind = 1; //indispensable
+    while ((opt = getopt(myargc, myargv, "c:C:i:n:f:g:o:p:vm:M:s:l:1:2:")) != -1) {	
+    switch(opt){
+	/* is it battery capacity min ?*/
+	case 'c':
+	    cmin = atoi(optarg);
+	    break;
+	/* is it battery capacity max ?*/
+	case 'C':
+	    cmax = atoi(optarg);
+	    break;
+	/* is it battery initial capacity ?*/
+	case 'i':
+	    cinit = atoi(optarg);
+	    break;
+	/* is it number of cycle ?*/
+	case 'n':
+	    ncycle = atoi(optarg);
+	    break;
+	/* is it filename ?*/
+	case 'f':
+	    strcpy(results_filename, strnskip(optarg, ' '));
+	    break;
+	/* is it config filename ?*/
+	case 'g':
+	    strcpy(config_filename, strnskip(optarg, ' '));
+	    break;
+	/* is it offset voltage ? */
+	case 'o':
+	    offset = atof(optarg);
+	    break;
+	/* is it slope voltage ? */
+	case 's':
+	    slope = atof(optarg);
+	    break;
+	/* is it offset current? */
+	case '2':
+	    ioffset = atof(optarg);
+	    break;
+	/* is it slope current ? */
+	case '1':
+	    islope = atof(optarg);
+	    break;
+	/* is it recordPeriod */
+	case 'p':
+	    recordPeriod = atoi(optarg);
+	    break;
+	/* is it language seclection */
+	case 'l':
+	    language = (optarg[0] == 'E' ? EN : FR);
+	    break;
+	/* is it verbose_concise */
+	case 'v':
+	    verbose_concise = VERBOSE;
+	    break;
+	/* is it offset vmin */
+	case 'm':
+	    vmin = atof(optarg);
+	    break;
+	/* is it offset vmaw */
+	case 'M':
+	    vmax= atof(optarg);
+	    break;
+	default :
+	    printf(language == EN ? "prmManager : Unknown option or bad syntax\n" : "prmManager : option inconnue ou erreur de syntaxe\n");
+	    return -1;
+    }
+    }
+    return 0;
+}
+
+
+/* arg manager */
+void argManager(int argc, char **argv)
+{
+    int opt;
+    /* Testing and getting parameters */
+    /* Paramters are
+    -a : daughter board adresse
+    -i : initial capacity
+    -c : battery capacity min (mAh)
+    -C : battery capacity max (mAh)
+    -f : filename to record results
+    -n : # cycles
+    -g : filename configuration
+    -r : threshold for recording
+    -h : help */
+    //while(i>=1){
+    optind = 1;
+    while ((opt = getopt(argc, argv, "a:c:C:i:n:f:g:p:vm:M:l:ht")) != -1) {	
+    switch(opt){
+	/* is it daughter board adress ?*/
+        case 'a':
+	    dba = atoi(optarg);
+	    break;
+	/* is it battery capacity min ?*/
+	case 'c':
+	    cmin = atoi(optarg);
+	    break;
+	/* is it battery capacity max ?*/
+	case 'C':
+	    cmax = atoi(optarg);
+	    break;
+	/* is it battery initial capacity ?*/
+	case 'i':
+	    cinit = atoi(optarg);
+	    break;
+	/* is it number of cycle ?*/
+	case 'n':
+	    ncycle = atoi(optarg);
+	    break;
+	/* is it filename ?*/
+	case 'f':
+	    strcpy(results_filename, optarg);
+	    break;
+	/* is it config filename ?*/
+	case 'g':
+	    strcpy(config_filename, optarg);
+	    break;
+	/* is it offset ? */
+	case 'o':
+	    offset = atof(optarg);
+	    break;
+	/* is it recordPeriod */
+	case 'p':
+	    recordPeriod = atoi(optarg);
+	    break;
+	/* is it verbose_concise */
+	case 'v':
+	    verbose_concise = VERBOSE;
+	    break;
+	/* is it test and calibration mode */
+	case 't':
+	    test = TRUE;
+	    break;
+	/* is it language seclection */
+	case 'l':
+	    language = (optarg[0] == 'E' ? EN : FR);
+	    break;
+	/* is it offset vmin */
+	case 'm':
+	    vmin = atof(optarg);
+	    break;
+	/* is it offset vmaw */
+	case 'M':
+	    vmax= atof(optarg);
+	    break;
+	/* is it help */
+	case 'h':
+	    printf(language == EN ? "Syntax: chadeche <option>\n" :  "Syntaxe: chadeche <option>\n");
+	    printf(language == EN ? "\t-a daugther board adress (0-3, def = %d)\n": "\t-a adresse de la carte mère (0-3, def = %d)\n", DAUGHTER_BOARD_ADRESS);
+	    printf(language == EN ? "\t-i initial battery capacity (mAh, def = %d)\n" :  "\t-i charge initiale de la batterie (mAh, def = %d)\n", CINIT);
+	    printf(language == EN ? "\t-c battery capacity min (mAh, def = %d)\n" : "\t-c charge min de la batterie (mAh, def = %d)\n", CMIN);
+	    printf(language == EN ? "\t-C battery capacity max (mAh, def = %d)\n" : "\t-C charge mxn de la batterie (mAh, def = %d)\n", CMAX);
+	    printf(language == EN ? "\t-n Repeat factor (def = %d)\n" : "\t-n facteur de répétition (def = %d)\n", NCYCLE);
+	    printf(language == EN ? "\t-f results filename (def = %s)\n" : "\t-f nom du fichier de résultats (def = %s)\n",RESULTS_FILENAME);
+	    printf(language == EN ? "\t-g config filename (def = %s)\n" : "\t-g nom du fichier de configuration (def = %s)\n" , CONFIG_FILENAME);
+	    printf(language == EN ? "\t-p record period (seconds, def = %d)\n" :  "\t-p période d'enregistrement (secondes, def = %d)\n", RECORDPERIOD);
+	    printf(language == EN ? "\t-v activate VERBOSE mode\n" :  "\t-v mode verbeux\n");
+	    printf(language == EN ? "\t-t activate TEST mode\n" :  "\t-t mode TEST activé\n");
+	    //printf("\t-o offset (volts, def = %5.4f)\n", OFFSET);
+	    printf(language == EN ? "\t-m Vmin (default is %5.4f)\n" : "\t-m Vmin (def =  %5.4f)\n", VMIN);
+	    printf(language == EN ? "\t-M vmin (default is %5.4f)\n" : "\t-M Vmax (def =  %5.4f)\n", VMAX);
+	    printf(language == EN ? "\t-h this help\n" : "\t-h cette aide\n");
+	    exit(1);
+	default :
+	    printf(language == EN ? "argManager : Unknown option or bad syntax\n" : "prmManager : option inconnue ou erreur de syntaxe\n");
+	    exit(1);
+    }
+    }
+}
 
 /* return a step number from its adress */
 int adress2step(int adress)
