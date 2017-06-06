@@ -92,9 +92,11 @@ extern int firstcall;
 /* interface de param.c */
 extern int prmManager(void);
 extern void argManager(int argc, char **argv);
+extern void displayarg(void);
 
 /* interface de config.c */
 extern void readconf(char *filename);
+extern void displayconf(void);
 
 /* interface de hw.c */
 extern void initchadeche(void);
@@ -106,3 +108,11 @@ extern void begled(void);
 extern void ongoingled(void);
 extern void endled(void);
 extern int deltapeak(int rawdata);
+
+/* interface de sem.c */
+extern int initmem(void);
+extern int initsem(void);
+extern void termsem(void);
+extern void termmem(void);
+extern int  subscribe(int dba);
+extern int  unsubscribe(int dba);

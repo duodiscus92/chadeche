@@ -212,3 +212,29 @@ void argManager(int argc, char **argv)
     }
     }
 }
+
+/* affichage des paramètres */
+void displayarg(void)
+{
+    printf(language == EN ? "Chadeche parameters:\n" : "Paramètres de Chadeche:\n");
+    printf(language == EN ? "\tDaugther board adress : %d\n" : "\tAdresse de la carte Chadeche : %d\n", dba);
+    printf(language == EN ? "\tInitial battery capacity : %d\n" : "\tCharge initiale de l'accu : %d\n", cinit); 
+    printf(language == EN ? "\tBattery capacity min: %d\n" : "\tCharge min de l'accu : %d\n" , cmin); 
+    printf(language == EN ? "\tBattery capacity max : %d\n" : "\tCharge max de l'accu : %d\n" , cmax); 
+    printf(language == EN ? "\tResults filename : %s\n" : "\tNom du fichier de résultats : %s\n", results_filename);
+    printf(language == EN ? "\tConfig filename : %s\n" : "\tNom du fichier de configuration : %s\n", config_filename);
+    printf(language == EN ? "\tCycle repeat factor: %d\n" : "\tFacteur de répétiion de cycles : %d\n", ncycle); 
+    printf(language == EN ? "\tOffset voltage : %5.4f\n" : "\tOffset en tension : %5.4f\n", offset);
+    printf(language == EN ? "\tSlope voltage : %5.4f\n" : "\tPente en tension : %5.4f\n", slope);
+    printf(language == EN ? "\tOffset current : %5.4f\n" : "\tOffset en courant : %5.4f\n", ioffset);
+    printf(language == EN ? "\tSlope current : %5.4f\n" : "\tPente en courant : %5.4f\n", islope);
+    printf(language == EN ? "\tVmin threshold : %5.4f\n" : "\tTension de seuil Vmin : %5.4f\n", vmin);
+    printf(language == EN ? "\tVmax threshold : %5.4f\n" : "\tTension de seuil Vmax : %5.4f\n", vmax);
+    printf(language == EN ? "\tRecord period in seconds: %4d\n" : "\tPériode d'enregistrement en secondes : %4d\n", recordPeriod);
+    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
+	 verbose_concise == CONCISE ? printf(language == EN ? "CONCISE\n" : "DISCRET\n") : printf(language == EN ? "VERBOSE\n" : "BAVARD\n");
+    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
+	 test == TRUE ? printf(language == EN ? "TEST ON\n" : "TEST activé\n") : printf(language == EN ? "TEST OFF\n" : "TEST désactivé\n");
+
+}
+

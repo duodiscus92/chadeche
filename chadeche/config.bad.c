@@ -41,15 +41,12 @@ void readconf(char *filename)
 	tconfig[i-1].cop = 0; // pour marquer le fin de config
 }
 
-#define IGNORE /* pour ne pas compiler une portion de code qui ne marche pas */
 /* affichage de la configuration */
 void displayconf(void)
 {
     int i, jumpadress;
     char *str, *endptr;
 
-    printf(language == EN ? "Sequences will be as follow ...\n" : "Les séquences se dérouleront comme suit ...\n");
-    printf("STEP\t|\tADR\tCOP\tmA\tS\tL\tH\tLmAh\tHmAh\tTRUE\tCtrlZ\tComment\n");
     for(i = 0/*, mAh = cinit*/; tconfig[i].cop != 0; i++){
 	printf("%d\t|\t%d\t%c\t%d\t%d",
 	    i+1,
@@ -57,7 +54,6 @@ void displayconf(void)
 	    tconfig[i].cop, 					// code opération
 	    tconfig[i].milliamp,				//courant de charge ou décharge
 	    tconfig[i].duration);				// durée de l'étape
-#ifndef IGNORE
 	    if( 
 		( strchr((str = tconfig[i].toolow), ':') == NULL) 		||
 		( strchr((str = tconfig[i].toohigh), ':') == NULL)		||
@@ -71,44 +67,7 @@ void displayconf(void)
 	    }
 	    else
 	    	printf("\t%s", str);
-#else
-	    if( strchr((str = tconfig[i].toolow), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-	    	printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toohigh), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toolowcapacity), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toohighcapacity), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].always), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].controlflag), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-#endif
 	    printf("\t%s",  tconfig[i].comment);
     }
+
 }

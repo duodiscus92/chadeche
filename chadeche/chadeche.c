@@ -8,7 +8,7 @@
 
 
 
-/* parameters et valeurs par défaut */
+/* parametres et valeurs par défaut */
 LANGUAGE language = FR;
 int	verbose_concise = CONCISE,
 	recordPeriod = RECORDPERIOD,
@@ -25,13 +25,6 @@ double 	offset = OFFSET, slope = SLOPE,		// pente et offset tension
 	vmin = VMIN;
 char 	results_filename[80]=RESULTS_FILENAME,
 	config_filename[80]=CONFIG_FILENAME;
-
-
-int min(int a, int b)
-{
-	return (a < b ? a : b);
-}
-
 
 /* semaphore for exclusive access to Rpi */
 sem_t *semaphore = NULL;
@@ -74,7 +67,10 @@ struct procdesc {
 };
 struct procdesc *p;
 
-int main (int argc, char **argv)
+/*******************************/
+/* C'est ici que tout commence */
+/*******************************/
+int main(int argc, char **argv)
 {
     int i, j, repeat, step, dt, peakdetected=0, milliampScaled/*, stepmAh*/, mAh;
     unsigned int initialData, currentData, milliamp;
@@ -116,85 +112,14 @@ int main (int argc, char **argv)
     prmManager();
     /* gestion des arguments cette fois-ci c'est pour tous les paramètres*/
     argManager(argc, argv);
-
-    printf(language == EN ? "Chadeche parameters:\n" : "Paramètres de Chadeche:\n");
-    printf(language == EN ? "\tDaugther board adress : %d\n" : "\tAdresse de la carte Chadeche : %d\n", dba);
-    printf(language == EN ? "\tInitial battery capacity : %d\n" : "\tCharge initiale de l'accu : %d\n", cinit); 
-    printf(language == EN ? "\tBattery capacity min: %d\n" : "\tCharge min de l'accu : %d\n" , cmin); 
-    printf(language == EN ? "\tBattery capacity max : %d\n" : "\tCharge max de l'accu : %d\n" , cmax); 
-    printf(language == EN ? "\tResults filename : %s\n" : "\tNom du fichier de résultats : %s\n", results_filename);
-    printf(language == EN ? "\tConfig filename : %s\n" : "\tNom du fichier de configuration : %s\n", config_filename);
-    printf(language == EN ? "\tCycle repeat factor: %d\n" : "\tFacteur de répétiion de cycles : %d\n", ncycle); 
-    printf(language == EN ? "\tOffset voltage : %5.4f\n" : "\tOffset en tension : %5.4f\n", offset);
-    printf(language == EN ? "\tSlope voltage : %5.4f\n" : "\tPente en tension : %5.4f\n", slope);
-    printf(language == EN ? "\tOffset current : %5.4f\n" : "\tOffset en courant : %5.4f\n", ioffset);
-    printf(language == EN ? "\tSlope current : %5.4f\n" : "\tPente en courant : %5.4f\n", islope);
-    printf(language == EN ? "\tVmin threshold : %5.4f\n" : "\tTension de seuil Vmin : %5.4f\n", vmin);
-    printf(language == EN ? "\tVmax threshold : %5.4f\n" : "\tTension de seuil Vmax : %5.4f\n", vmax);
-    printf(language == EN ? "\tRecord period in seconds: %4d\n" : "\tPériode d'enregistrement en secondes : %4d\n", recordPeriod);
-    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
-	 verbose_concise == CONCISE ? printf(language == EN ? "CONCISE\n" : "DISCRET\n") : printf(language == EN ? "VERBOSE\n" : "BAVARD\n");
-    printf(language == EN ? "\tMode :  " :  "\tMode :  ");
-	 test == TRUE ? printf(language == EN ? "TEST ON\n" : "TEST activé\n") : printf(language == EN ? "TEST OFF\n" : "TEST désactivé\n");
-
-
+    /* affichage des paramètres */
+    displayarg();
     /* lecture et mémorisation fichier de config */
     readconf(config_filename);
-    /* presentation de l'essai */
-    i = elapsedtime = 0;
-    printf(language == EN ? "Sequences will be as follow ...\n" : "Les séquences se dérouleront comme suit ...\n");
-    printf("STEP\t|\tADR\tCOP\tmA\tS\tL\tH\tLmAh\tHmAh\tTRUE\tCtrlZ\tComment\n");
-    //while(tconfig[i].cop != 0){
-    for(i = 0, mAh = cinit; tconfig[i].cop != 0; i++){
-	printf("%d\t|\t%d\t%c\t%d\t%d",
-	    i+1,
-	    tconfig[i].adr,					// numero ligne
-	    tconfig[i].cop, 					// code opération
-	    tconfig[i].milliamp,				//courant de charge ou décharge
-	    tconfig[i].duration);				// durée de l'étape
-	    if( strchr((str = tconfig[i].toolow), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-	    	printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toohigh), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toolowcapacity), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].toohighcapacity), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].always), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    if( strchr((str = tconfig[i].controlflag), ':') == NULL){ 
-	    	jumpadress = strtol(str,  &endptr, 10);
-	    	endptr == str ? printf("\t%c", str[0]) : printf("\t%d", jumpadress);
-	    }
-	    else
-		printf("\t%s", str);
-	    //printf("\t|\t%d\t%d\t%s",
-	    printf("\t%s",
-	    //mAh +=						// mAh cumulés
-		//((tconfig[i].milliamp*tconfig[i].duration/3600)* (tconfig[i].cop == 'C' ? 1 : -1)),
-	    //elapsedtime += tconfig[i].duration,			// temps total depuis le début de l'essai
-	    tconfig[i].comment);
-    }
+    /* affichage de le confirguration */
+    displayconf();
+
+    /*i = */elapsedtime = 0;
 
     /* installing the Ctrl-C handler */
     signal(SIGINT, CtrlCHandler);
@@ -206,7 +131,12 @@ int main (int argc, char **argv)
 	perror("sigaction");
 	exit(1);
     }
-
+#undef  SEMMODULE
+#ifdef SEMMODULE /* il y existe un module sem.c qui fonctionne */
+    if (initmem() == -1) exit(1);
+    if (initsem() == -1) exit(1);
+    if (subscribe(dba) == -1) exit(1);
+#else /* pas de module sem.c ou bien le module ne fonctionne pas */
 #ifdef SHAREDMEMORY
     /* shared memory creation */
 #ifdef DEBUG
@@ -285,6 +215,7 @@ int main (int argc, char **argv)
 #endif
      }
 #endif
+#endif /*SEMMODULE */
      /* Rpi initialization */
     initchadeche();
 
@@ -326,7 +257,11 @@ int main (int argc, char **argv)
     //if((fp = fopen(results_filename,  "w+x"))==NULL){
     if((fp = fopen(results_filename,  "a+"))==NULL){
 	printf("Program aborted : can't open results file : %s\n",results_filename);
- #ifdef SHAREDMEMORY
+#ifdef SEMMODULE
+	unsubscribe(dba);
+	termmem();
+#else
+#ifdef SHAREDMEMORY
 	sem_wait(semaphore);
  	p->nprocess--;
  	p->tprocess[dba] = 0; 
@@ -348,6 +283,7 @@ int main (int argc, char **argv)
 	    	perror("shm_unlink: unable to free shared memory");
 	}
 #endif
+#endif /* SEMMODULE */
 	exit(1);
     }
 
@@ -570,6 +506,10 @@ abort:
     endled();
     discharge();
     /* clear shared memory */
+#ifdef SEMMODULE
+    unsubscribe(dba);
+    termmem();
+#else
 #ifdef SHAREDMEMORY
     sem_wait(semaphore);
     p->nprocess--;
@@ -592,6 +532,7 @@ abort:
     	sem_unlink("/semaphore");
     }
 #endif
+#endif /*SEMMODULE*/
     printf(language == FR ? "\nAu revoir !!!\n" : "\nBye !!!\n");
     return 0;
 }
