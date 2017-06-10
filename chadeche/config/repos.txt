@@ -1,2 +1,2 @@
 ADR	C/D	mA	SD	TL	TH	LmAh	HmAh	TRUE	CTRLZ	COMMENT
-1	C	0	9000	I	I	I	I	I	S	#Repos
+1	D	0	9000	I	I	I	I	I	S	#Repos

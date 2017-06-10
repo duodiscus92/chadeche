@@ -1,8 +1,27 @@
  /*
-	chadeche by J. Ehrlich
+
+Copyright 2017 Jacques Ehrlich
+
+This file is part of Chadeche.
+
+    Chadeche is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Chadeche is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Chadeche.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/*
 	Use wiringPi Interface Library released under the GNU LGPLv3 license
 		http://wiringpi.com
- */
+*/
 
 #include "chadeche.h"
 
@@ -39,10 +58,6 @@ void CtrlCHandler(int sig)
 
 volatile int controlflag=0;
 /* Ctrl-Z interrupt handler */
-//void CtrlZHandler(int sig)
-//{
-//    controlflag=1;
-//}
 void CtrlZHandler(int sig, siginfo_t *siginfo, void * context)
 {
     controlflag=1;
@@ -59,13 +74,6 @@ int adress2step(int adress)
 	    return step;
     return -1;
 }
-
-/* data for shared memory */
-struct procdesc {
-    int nprocess;
-    int tprocess[NB_BOARD];
-};
-struct procdesc *p;
 
 /*******************************/
 /* C'est ici que tout commence */
@@ -118,12 +126,17 @@ int main(int argc, char **argv)
     readconf(config_filename);
     /* affichage de le confirguration */
     displayconf();
+    /* ouverture du fichier pour enregistrer les résultats */
+    /* s'il existe pas on le crée sinon on enregistre à la suite de ce qui existe déjà */
+    if((fp = fopen(results_filename,  "a+" /* "w+x" */))==NULL){
+	printf(language == EN ? "Program aborted : can't open results file : %s\n" : \
+				"Programme abandonné : impossible d'ouvir le fichier de résultats: %s\n" ,results_filename);
+	exit(1);
+    }
 
-    /*i = */elapsedtime = 0;
-
-    /* installing the Ctrl-C handler */
+    /* installation du Ctrl-C handler */
     signal(SIGINT, CtrlCHandler);
-    /* installing the Ctrl-Z handler */
+    /* installation du Ctrl-Z handler */
     act.sa_sigaction = &CtrlZHandler;
     act.sa_flags = SA_SIGINFO;
     //signal(SIGTSTP, CtrlZHandler);
@@ -136,16 +149,17 @@ int main(int argc, char **argv)
     /* creation sémaphores */
     if (initsem() == -1) exit(1);
     /* enregistrement du Chadeche pour la carte selectionnée */
+    /* et abandon si un chadeche a déjà lancé sur cette carte */
     if (subscribe(dba) == -1){
 	termsem();
 	termmem();
 	exit(1);
     }
 
-    /* Rpi initialization */
+    /* Intialisation du hardware (voir module hw.c */
     initchadeche();
 
-    /* end led (red) off */
+    /* clognotement led pour début essai */
     begled();
 
     /* settintgs and pre-tests */
@@ -154,49 +168,36 @@ int main(int argc, char **argv)
     delay(5000);
 
     /* wait for battery presence before starting test (excepted if -t optiont used )*/
+    /* ici il y a un problème car parfois la batterie n'est pas détectée ... je cherche ... */
     if(test == FALSE){
 	if((currentData=mcp3201read()) == 0 ){
 	   printf(language == EN ? "Waiting for battery presence\n" : "Attente présence accu\n");
 	   do {
 	      printf("."); fflush(stdout);
-	       delay(1000);
+	      delay(1000);
 	   } while ((currentData = mcp3201read()) == 0);
 	   printf(language == EN ? "\nBattery presence detected. Test will start in 5 seconds ...\n" : "Présence de l'accu détectée. L'essai commence dans 5 secondes ... \n");
 	   delay(5000);
 	}
     }
     else{
-	currentData=mcp3201read();
 	printf(language == EN ? "\nTest will start in 5 seconds ...\n" : "L'essai commence dans 5 secondes ... \n");
 	delay(5000);
+	currentData=mcp3201read();
     }
 
 
     /* verify that Vcell don't exceed Vmax_open */
-    //if((voltage = (double)currentData*5.1/4096 + offset) >= VMAX_OPEN)
     if((voltage = slope*(double)currentData/1000 + offset) >= VMAX_OPEN){
 	decisioncause = VMAXOPEN_DETECT;
 	goto abort;
-    }
-
-   /* creating  the file to record results */
-    //if((fp = fopen(results_filename,  "w+x"))==NULL){
-    if((fp = fopen(results_filename,  "a+"))==NULL){
-	printf("Program aborted : can't open results file : %s\n",results_filename);
-	/* desinscription du Chadèche */
-	if(unsubscribe(dba)== 0){
-	    /* si c'est le dernier delink semaphore semaphore */
-	    termsem();
-	    /* et delinkl mémoire */
-	    termmem();
-	}
-	exit(1);
     }
 
     /* main measurement loop */
     time(&totaltime);
     /* cycle loop */
     fmAh=cinit; elapsedtime = 0;
+    /* clignetement le sur essai en cours */
     ongoingled();
     for (repeat =0; (repeat < ncycle) ; /*repeat++*/){
 	printf(language == EN ? "Starting cycle nr.:%2d\n" :  "Lancement cycle nr.:%2d\n", repeat+1);
@@ -204,12 +205,10 @@ int main(int argc, char **argv)
     	time(&cycletime);
 	step = 0; /*stepmAh=0*/;
 	/* step loop */
-	//while( (tconfig[step].cop !=0) ){
 	for(step = 0;  (tconfig[step].cop !=0); step++){
 	    /*mAh += stepmAh;*/
 	    time(&steptime);
 	    t = steptime;
-	    //printf("Starting step nr.: %2d: %c\tmA=%d\tDuration=%d\tmAh=%d\tE.T.=%d\t%s",
 	    printf(language == EN ? "Starting step nr.%2d (%s): %s" : "Lancement séquence nr.%2d (%s): %s", step+1,  msgcause[decisioncause][language], tconfig[step].comment);
 	    /* set the relay for the current mode */
 	    (cop=tconfig[step].cop) == 'D' ? discharge() : charge() ;
@@ -223,8 +222,6 @@ int main(int argc, char **argv)
 		/* read battery voltage */
       		currentData = mcp3201read();
 	        voltage = slope*(double)currentData/1000 + offset;
-	        //voltage = (double)currentData*0.9758*5.1/4096 + offset;
-                //voltage = (double)currentData*5.1/4096 + offset;
 		decision = 'I'; // Ignore
 		decisioncause = NO_CAUSE;
 		if(stopflag == 1 || peakdetected)
@@ -321,7 +318,7 @@ int main(int argc, char **argv)
 		t = looptime;
 	   	/*step*/fmAh += ( (tconfig[step].milliamp * /*(t-steptime)*/elapsedtime/3600.0) * (tconfig[step].cop == 'C' ? 1 : -1) );
 		if (fmAh <= 0) fmAh = 0;
-		/* appliquer la décision */
+		/* appliquer la décision (y a des goto, c'est pas beau, mais c'est le plus simple)*/
 mngdec:		switch(decision){
 		    case 'A' : 	goto abort;		// abort
 		    case 'S' : 	goto nextstep;	// next step
@@ -394,12 +391,14 @@ abort:
     }
     }
 
-//endchadeche:
+    /* annonce la fin d'essai */
     printf(language == EN ? "Setting the discharge current to zero\n" : "Remise à zéro du courant de charge ou décharge\n");
     mcp4922write(0,0);
-    /* switching the end led (red) on */
     printf(language == EN ? "Type Ctrl-C to quit definitively\n" : "Tapez Ctrl-C pour quitter définitvement\n");
     stopflag = 0;
+
+    /* ça fait clignoter la led bicolore de rouge a vert et réciproquement */
+    /* c'est pour indiquer que l'essai est terminé */
     while(stopflag == 0) {
 	//digitalWrite (ENDLED, LOW) ;
 	charge();
@@ -410,8 +409,9 @@ abort:
     }
 
     endled();
-    discharge();
-    /* nettoyage memoire partagée et semaphore */
+    charge();
+
+/* nettoyage memoire partagée et semaphore */
     if(unsubscribe(dba) == 0){
 	termsem();
     	termmem();
