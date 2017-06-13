@@ -158,14 +158,21 @@ int main(int argc, char **argv)
 
     /* Intialisation du hardware (voir module hw.c */
     initchadeche();
+    //delay(1000);
 
     /* clognotement led pour début essai */
     begled();
 
     /* settintgs and pre-tests */
     printf(language == EN ? "Setting current to zero and waiting 5 seconds ...\n" : "Courant à zéro et attente de 5 secondes ...\n");
+    for(i=0;i<10;i++){
+    	discharge();
+    	delay(100);
+    	charge();
+    	delay(100);
+    }
     mcp4922write(0,0);
-    delay(5000);
+    delay(3000);
 
     /* wait for battery presence before starting test (excepted if -t optiont used )*/
     /* ici il y a un problème car parfois la batterie n'est pas détectée ... je cherche ... */

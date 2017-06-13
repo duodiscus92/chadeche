@@ -46,7 +46,7 @@ int initsem(void)
 	 }
      }
      else{
-	firstcall = 0;
+	//firstcall = 0;
 #ifdef DEBUG
 	printf("semaphore  created\n");
 #endif
@@ -169,4 +169,16 @@ int unsubscribe(int dba)
     sem_post(semaphore);
 #endif
    return i;
+}
+
+/* renvoi 1 si le process est le premier, 0 sinon */
+int firstcall()
+{
+    int i;
+
+    //sem_wait(semaphore);
+    i = p->nprocess == 1 ? 1 : 0;
+    //sem_post(semaphore);
+
+    return i; 
 }

@@ -26,13 +26,13 @@ This file is part of Chadeche.
 #include "chadeche.h"
 
 /* chadeche hardware initialisation */
-int firstcall = 1;
+//int firstcall = 1;
 void initchadeche(void)
 {
     sem_wait(semaphore);
     wiringPiSetup () ;
     /* only the first process called can initialize RPi hardware */
-    if(firstcall == 1){
+    if(firstcall() == 1){
     	pinMode (A0, OUTPUT) ;
     	pinMode (A1, OUTPUT) ;
     	pinMode (CS0, OUTPUT) ;
@@ -56,7 +56,7 @@ int charge(void)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   	// adresse A0=0
     digitalWrite (A1, dba&0x02) ;	// adresse A1=0
-    //delay(5); // attente stabilisation
+    delay(2); // attente stabilisation
     digitalWrite (REL, CHARGE) ;  	// charge mode
     digitalWrite (CS2, HIGH) ;  	// select LATCH
     delay(5);
@@ -92,7 +92,7 @@ void mcp4922write(unsigned int value, unsigned int channel)
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   	// adresse A0=0
     digitalWrite (A1, dba&0x02) ;   	// adresse A1=0
-    //delay(2); // attente stabilisation
+    delay(2); // attente stabilisation
     val.i = value+4096+8192+16384;
     if(channel == 1) val.i += 32768;
     tmp= val.buf[0];
@@ -120,7 +120,7 @@ unsigned int mcp3201read()
     sem_wait(semaphore);
     digitalWrite (A0, dba&0x01) ;   // adresse A0=0
     digitalWrite (A1, dba&0x02) ;   // adresse A1=0
-    //delay(2); // attente stabilisation
+    delay(2); // attente stabilisation
     for(i=0, filtered=0 ;i<8; i++){
         digitalWrite (CS1, HIGH) ;
 	wiringPiSPIDataRW(0, val.buf, 2);

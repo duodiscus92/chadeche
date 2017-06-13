@@ -113,7 +113,7 @@ char 	results_filename[80],
 
 extern CONFIG tconfig[MAX_STEP];
 extern sem_t *semaphore;
-extern int firstcall;
+//extern int firstcall;
 
 /* interface de param.c */
 extern int prmManager(void);
@@ -142,4 +142,4 @@ extern int initmem(void);
 extern int termmem(void);
 extern int  subscribe(int dba);
 extern int  unsubscribe(int dba);
-
+extern int firstcall();
