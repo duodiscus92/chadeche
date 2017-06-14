@@ -58,8 +58,10 @@ This file is part of Chadeche.
 #define CINIT 0 	/* mAh */
 #define CMIN 100 	/* mAh */
 #define CMAX 1300 	/* mAh */
-#define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
-#define VMAX 1.75 	/* Vcell max during charge */
+//#define VMAX_OPEN 1.65 /* Vcell max when I = 0 */
+#define VMAX_OPEN_ON_CHARGE 1.75 /* Vcell max when I = 0 and batt removed */
+#define VMAX_OPEN_ON_DISCHARGE 0.1 /* Vcell max when I = 0 ans batt removed */
+#define VMAX 1.65 	/* Vcell max during charge */
 #define VMIN 1.0 	/* Vcell min */
 #define OFFSET 0	/* Voltage and current offset */
 #define SLOPE 1		/* voltage and current slope */
@@ -119,6 +121,7 @@ extern sem_t *semaphore;
 extern int prmManager(void);
 extern void argManager(int argc, char **argv);
 extern void displayarg(void);
+extern int argtest(void);
 
 /* interface de config.c */
 extern void readconf(char *filename);

@@ -122,6 +122,12 @@ int main(int argc, char **argv)
     argManager(argc, argv);
     /* affichage des paramètres */
     displayarg();
+    /* test de certains arguments */
+    printf(language == EN ? "Testing some parameters and abort if values are wrong\n" : \
+			    "Test de certains paramètres et abandon si des valeurs sont mauvaises\n");
+    if(argtest() == -1)
+	exit(1);
+    printf(language == EN ? "Test successful\n" : "Test réalisé avec succès\n");
     /* lecture et mémorisation fichier de config */
     readconf(config_filename);
     /* affichage de le confirguration */
@@ -177,12 +183,18 @@ int main(int argc, char **argv)
     /* wait for battery presence before starting test (excepted if -t optiont used )*/
     /* ici il y a un problème car parfois la batterie n'est pas détectée ... je cherche ... */
     if(test == FALSE){
-	if((currentData=mcp3201read()) == 0 ){
+	currentData=mcp3201read();
+	//printf("%d\n", currentData);
+	voltage = slope*(double)currentData/1000 + offset;
+	//if((currentData=mcp3201read()) > VMAX_OPEN ){
+	if(voltage > VMAX_OPEN_ON_CHARGE ){
 	   printf(language == EN ? "Waiting for battery presence\n" : "Attente présence accu\n");
 	   do {
 	      printf("."); fflush(stdout);
 	      delay(1000);
-	   } while ((currentData = mcp3201read()) == 0);
+	      currentData=mcp3201read();
+	      voltage = slope*(double)currentData/1000 + offset;
+	   } while (voltage > VMAX_OPEN_ON_CHARGE);
 	   printf(language == EN ? "\nBattery presence detected. Test will start in 5 seconds ...\n" : "Présence de l'accu détectée. L'essai commence dans 5 secondes ... \n");
 	   delay(5000);
 	}
@@ -195,7 +207,7 @@ int main(int argc, char **argv)
 
 
     /* verify that Vcell don't exceed Vmax_open */
-    if((voltage = slope*(double)currentData/1000 + offset) >= VMAX_OPEN){
+    if((voltage = slope*(double)currentData/1000 + offset) >= VMAX_OPEN_ON_CHARGE){
 	decisioncause = VMAXOPEN_DETECT;
 	goto abort;
     }
@@ -233,6 +245,12 @@ int main(int argc, char **argv)
 		decisioncause = NO_CAUSE;
 		if(stopflag == 1 || peakdetected)
 		    goto abort;
+		/* absence batterie */
+		if((tconfig[step].cop == 'C' && voltage >= VMAX_OPEN_ON_CHARGE) ||
+		   (tconfig[step].cop == 'D' && voltage <= VMAX_OPEN_ON_DISCHARGE) ){
+			decisioncause = VMAXOPEN_DETECT;
+			goto abort;
+		}
 		if(voltage <= vmin){
 		    //printf("Event : V < Vmin\n");
 	    	    if( strchr((str = tconfig[step].toolow), ':') == NULL){ 
@@ -364,8 +382,9 @@ abort:
     else{
     switch(decisioncause) {
     case VMAXOPEN_DETECT:
-    	printf (language == EN ? "\nBattery test ends because battery voltage = %5.3f >= %4.2f Volts (battery removed)\n" : \
-				 "\nFin d'essai car tension de l'accu = %5.3f  >= %4.2f Volts (accu absent)\n", voltage, VMAX_OPEN);
+    	printf (language == EN ? "\nBattery test ends because battery voltage = %5.3f <= %4.2f Volts or >= %4.2f Volts (battery removed)\n" : \
+				 "\nFin d'essai car tension de l'accu = %5.3f <= %4.2f Volts ou  >= %4.2f Volts (accu absent)\n", \
+				voltage, VMAX_OPEN_ON_DISCHARGE, VMAX_OPEN_ON_CHARGE);
 	break;
     case TOOLOW_DETECT:
     	printf (language == EN ? "\nBattery test ends because battery voltage = %5.3f <= %4.2f Volts (low threshold)\n" : \

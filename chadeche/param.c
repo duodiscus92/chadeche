@@ -263,3 +263,19 @@ void displayarg(void)
 
 }
 
+/* test sur la valeur de certains arguments */
+int argtest(void)
+{
+    if(vmin < VMAX_OPEN_ON_DISCHARGE){
+	printf(language == EN ? "Vmin cannot be lower than %5.4f Volt(s)\n" : \
+				"Vmin ne peut pas être inférieur à %5.4f Volts(s)\n", VMAX_OPEN_ON_DISCHARGE);
+	return -1;
+    }
+
+    if(vmax > VMAX_OPEN_ON_CHARGE){
+	printf(language == EN ? "Vmin cannot be greter than %5.4f Volt(s)\n" : \
+				"Vmin ne peut pas être supérieur à %5.4f Volts(s)\n", VMAX_OPEN_ON_CHARGE);
+	return -1;
+    }
+    return 0;
+}
