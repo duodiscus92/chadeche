@@ -121,6 +121,7 @@ extern sem_t *semaphore;
 extern int prmManager(void);
 extern void argManager(int argc, char **argv);
 extern void displayarg(void);
+extern void displayarg2(void);
 extern int argtest(void);
 
 /* interface de config.c */

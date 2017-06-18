@@ -263,6 +263,30 @@ void displayarg(void)
 
 }
 
+#define NB_ARG 16
+static struct argdata{
+   char nom[20];
+   void *pvalue;
+   char format[10];
+}targ[NB_ARG];
+
+
+/* affichage des arguments sous forme de tableau */
+void displayarg2(void)
+{
+    printf("==========================================================================================================\n");
+    printf("|                                          PARAMETRES/PARAMETERS                                         |\n");
+    printf("==========================================================================================================\n");
+    printf("| ADB | Nb. cycles | Trec | Mode  | Test | Seuil Vmin | Seuil Vmax | Fichier de configuation\n");
+    printf("----------------------------------------------------------------------------------------------------------\n");
+    printf("|%5d|%12d|%6d|%7s|%6s|%12.5f|%12.5f|%s\n", dba, ncycle, recordPeriod, verbose_concise==CONCISE ? "DISCRET" : "BAVARD", test == TRUE ? "ON" : "OFF", vmin, vmax, config_filename); 
+    printf("==========================================================================================================\n");
+    printf("| Seuil Cmin | Seuil Cmax | Pente V | Offset V | Pente I | Offset I | Fichier de résultats\n");
+    printf("----------------------------------------------------------------------------------------------------------\n");
+    printf("|%12d|%12d|%9.5f|%10.5f|%9.5f|%10.5f|%s\n", cmin, cmax, slope, offset, islope, ioffset, results_filename);
+    printf("==========================================================================================================\n");
+}
+
 /* test sur la valeur de certains arguments */
 int argtest(void)
 {

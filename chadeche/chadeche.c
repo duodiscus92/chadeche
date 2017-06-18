@@ -80,13 +80,13 @@ int adress2step(int adress)
 /*******************************/
 int main(int argc, char **argv)
 {
-    int i, j, repeat, step, dt, peakdetected=0, milliampScaled/*, stepmAh*/, mAh;
+    int i, j, repeat, step, dt, /*peakdetected=0,*/ milliampScaled/*, stepmAh*/, mAh;
     unsigned int initialData, currentData, milliamp;
     double voltage, fmAh;
     time_t t, totaltime, cycletime, elapsedtime, steptime, looptime, waketime;
     struct tm *pt;
     FILE *fp;
-    char cop, decision;
+    char cop, decision, c;
     char *str, *endptr; // for call to function strtol
     int jumpadress; // for Jump
     struct sigaction act; // for ctrlZ management
@@ -121,7 +121,8 @@ int main(int argc, char **argv)
     /* gestion des arguments cette fois-ci c'est pour tous les paramètres*/
     argManager(argc, argv);
     /* affichage des paramètres */
-    displayarg();
+    //displayarg();
+    displayarg2();
     /* test de certains arguments */
     printf(language == EN ? "Testing some parameters and abort if values are wrong\n" : \
 			    "Test de certains paramètres et abandon si des valeurs sont mauvaises\n");
@@ -243,8 +244,25 @@ int main(int argc, char **argv)
 	        voltage = slope*(double)currentData/1000 + offset;
 		decision = 'I'; // Ignore
 		decisioncause = NO_CAUSE;
-		if(stopflag == 1 || peakdetected)
-		    goto abort;
+		if(stopflag == 1 /*|| peakdetected*/){
+		    /* annonce la suspension d'essai */
+    		    printf(language == EN ? "\nSetting the discharge current to zero\n" : "\nRemise à zéro du courant de charge ou décharge\n");
+    		    mcp4922write(0,0);
+		    printf(language == EN ? "Test suspended ...\n" : "Essai suspendu ...\n");
+    		    printf(language == EN ? "Type Q <ENTER> to quit definitively or any other key to resume\n" : "Tapez Q <ENTREE> pour quitter définitvement ou tout autre touche pour reprendre\n");
+		    read(0, &c, 1);
+		    //if((c=getchar()) == 'Q'){
+		    if(c == 'Q'){
+		        //fflush(stdin);
+		        goto abort;
+		    }
+		    else { 
+	    		stopflag = 0;
+			fflush(stdin);
+			printf(language == EN ? "Resuming ...\n" : "Reprise ...\n");
+			continue;
+		    }
+		}
 		/* absence batterie */
 		if((tconfig[step].cop == 'C' && voltage >= VMAX_OPEN_ON_CHARGE) ||
 		   (tconfig[step].cop == 'D' && voltage <= VMAX_OPEN_ON_DISCHARGE) ){
@@ -372,10 +390,10 @@ nextcycle:  repeat++;
 abort:
     fclose(fp);
 
-    if (peakdetected)
+    /*if (peakdetected)
     	printf (language == EN ? "\nBattery test ends because battery peak detected with voltage = %5.3f\n" :  \
 				 "\nFin d'essai car un pic de tension a été détecté = %5.3f volts\n", voltage);
-    else if (stopflag==1)
+    else*/ if (stopflag==1)
     	printf (language == EN ? "\nBattery test ends due to Ctrl-C occurence. Battery voltage is = %5.3f\n" : \
 				 "\nFin d'essai à cause d'un  Ctrl-C. Tension accu = %5.3f\n" , voltage);
     /* testing why the test ends */
@@ -415,7 +433,6 @@ abort:
 				 "\nFin d'essai car la dernières séquence a été exécutée (fin normale d'essai)\n");
 	break;
     }
-    }
 
     /* annonce la fin d'essai */
     printf(language == EN ? "Setting the discharge current to zero\n" : "Remise à zéro du courant de charge ou décharge\n");
@@ -432,6 +449,7 @@ abort:
         //digitalWrite (ENDLED, HIGH) ;
 	discharge();
 	delay(2000);
+    }
     }
 
     endled();
