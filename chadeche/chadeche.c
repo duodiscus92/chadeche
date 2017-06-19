@@ -75,6 +75,26 @@ int adress2step(int adress)
     return -1;
 }
 
+/* lit un car et vérifie qu'il est dans une liste de choix possibles */
+int smartgetchar(char *choix)
+{
+   char  c;
+   int i = 0;
+
+   while(1){
+	//fflush(stdin);
+	read(0, &c, 1);
+	for(i=0; i<strlen(choix); i++)
+	   if(c == choix[i])
+		return c;
+	read(0, &c, 1);
+	printf(language == EN ? "Unauthorized selection\n" : "Selection non autorisée\n"); 
+	printf(language == EN ? "Type another selection : " : "Tapez une autre sélection : ");
+	fflush(stdout);
+   }
+}
+
+
 /*******************************/
 /* C'est ici que tout commence */
 /*******************************/
@@ -249,16 +269,17 @@ int main(int argc, char **argv)
     		    printf(language == EN ? "\nSetting the discharge current to zero\n" : "\nRemise à zéro du courant de charge ou décharge\n");
     		    mcp4922write(0,0);
 		    printf(language == EN ? "Test suspended ...\n" : "Essai suspendu ...\n");
-    		    printf(language == EN ? "Type Q <ENTER> to quit definitively or any other key to resume\n" : "Tapez Q <ENTREE> pour quitter définitvement ou tout autre touche pour reprendre\n");
-		    read(0, &c, 1);
-		    //if((c=getchar()) == 'Q'){
-		    if(c == 'Q'){
+    		    printf(language == EN ? "Type Q or q <ENTER> to quit definitively or R o r key to resume : " : "Tapez Q ou q  <ENTREE> pour quitter définitvement ou R ou r pour reprendre : ");
+		    fflush(stdout);
+		    //read(0, &c, 1);
+		    if((c=smartgetchar("QqRr")) == 'Q' || c == 'q'){
+		    //if(c == 'Q'){
 		        //fflush(stdin);
 		        goto abort;
 		    }
-		    else { 
+		    else if (c== 'R' || c == 'r'){
 	    		stopflag = 0;
-			fflush(stdin);
+			//fflush(stdin);
 			printf(language == EN ? "Resuming ...\n" : "Reprise ...\n");
 			continue;
 		    }
