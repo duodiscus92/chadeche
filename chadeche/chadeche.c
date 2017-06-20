@@ -207,7 +207,6 @@ int main(int argc, char **argv)
 	currentData=mcp3201read();
 	//printf("%d\n", currentData);
 	voltage = slope*(double)currentData/1000 + offset;
-	//if((currentData=mcp3201read()) > VMAX_OPEN ){
 	if(voltage > VMAX_OPEN_ON_CHARGE ){
 	   printf(language == EN ? "Waiting for battery presence\n" : "Attente présence accu\n");
 	   do {
@@ -246,7 +245,6 @@ int main(int argc, char **argv)
 	step = 0; /*stepmAh=0*/;
 	/* step loop */
 	for(step = 0;  (tconfig[step].cop !=0); step++){
-	    /*mAh += stepmAh;*/
 	    time(&steptime);
 	    t = steptime;
 	    printf(language == EN ? "Starting step nr.%2d (%s): %s" : "Lancement séquence nr.%2d (%s): %s", step+1,  msgcause[decisioncause][language], tconfig[step].comment);
@@ -271,15 +269,11 @@ int main(int argc, char **argv)
 		    printf(language == EN ? "Test suspended ...\n" : "Essai suspendu ...\n");
     		    printf(language == EN ? "Type Q or q <ENTER> to quit definitively or R o r key to resume : " : "Tapez Q ou q  <ENTREE> pour quitter définitvement ou R ou r pour reprendre : ");
 		    fflush(stdout);
-		    //read(0, &c, 1);
 		    if((c=smartgetchar("QqRr")) == 'Q' || c == 'q'){
-		    //if(c == 'Q'){
-		        //fflush(stdin);
 		        goto abort;
 		    }
 		    else if (c== 'R' || c == 'r'){
 	    		stopflag = 0;
-			//fflush(stdin);
 			printf(language == EN ? "Resuming ...\n" : "Reprise ...\n");
 			continue;
 		    }
@@ -353,7 +347,6 @@ int main(int argc, char **argv)
 		    decisioncause = decision == 'I' ? NO_CAUSE : ALWAYS;
 		}
 		/* verbose mode */
-		//if((verbose_concise == VERBOSE) && !((t-cycletime) % 10) ){
 		dt = verbose_concise == VERBOSE ? 10 : recordPeriod; 
 		if(!((t-cycletime) % dt) ){
             	    printf("%c/%02d/%02d DBA=%1d mA=%4d CET=%6ld SET=%6ld TET=%6ld STA=%6d V=%5.3f mAh=%5.1f %s", 
@@ -375,7 +368,6 @@ int main(int argc, char **argv)
 		j++;
 		/* wait for 1 sec before next battery voltage measurement */
 	    	delay(1000);
-	    	//time(&t);
 		/* estimate of mAh in the step */
 		time(&looptime);
 		elapsedtime = looptime-t;
@@ -464,10 +456,8 @@ abort:
     /* ça fait clignoter la led bicolore de rouge a vert et réciproquement */
     /* c'est pour indiquer que l'essai est terminé */
     while(stopflag == 0) {
-	//digitalWrite (ENDLED, LOW) ;
 	charge();
 	delay(2000);
-        //digitalWrite (ENDLED, HIGH) ;
 	discharge();
 	delay(2000);
     }
